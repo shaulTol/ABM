@@ -66,13 +66,20 @@ class SDXLScore:
     def __init__(self, unet, scheduler, t, prompt_embeds, pooled_prompt_embeds,
                  time_ids, device, latent_shape=(4, 64, 64), batch_size=128,
                  guidance_scale=0.0, negative_prompt_embeds=None,
-                 negative_pooled_prompt_embeds=None):
+                 negative_pooled_prompt_embeds=None,
+                 controlnet=None, control_image=None,
+                 controlnet_conditioning_scale=0.8):
         self.unet = unet
         self.device = device
         self.latent_shape = latent_shape
         self.d = int(np.prod(latent_shape))
         self.batch_size = batch_size
         self.guidance_scale = guidance_scale
+
+        # ControlNet
+        self.controlnet = controlnet
+        self.control_image = control_image  # (1, 3, H, W) tensor on device
+        self.controlnet_conditioning_scale = controlnet_conditioning_scale
 
         # UNet dtype (stays fp16)
         self.unet_dtype = next(unet.parameters()).dtype
@@ -94,9 +101,10 @@ class SDXLScore:
             self.negative_prompt_embeds = negative_prompt_embeds.to(device=device, dtype=self.unet_dtype)
             self.negative_pooled_prompt_embeds = negative_pooled_prompt_embeds.to(device=device, dtype=self.unet_dtype)
 
+        cn_str = f", controlnet_scale={controlnet_conditioning_scale}" if controlnet else ""
         print(f"  SDXLScore: t={t}, alpha_bar={alpha_bar_t:.6f}, "
               f"sigma_t={self.sigma_t:.6f}, guidance_scale={guidance_scale}, "
-              f"batch_size={batch_size}, unet_dtype={self.unet_dtype}")
+              f"batch_size={batch_size}, unet_dtype={self.unet_dtype}{cn_str}")
 
     @torch.no_grad()
     def __call__(self, x_flat):
@@ -110,6 +118,23 @@ class SDXLScore:
             end = min(start + self.batch_size, N)
             scores.append(self._score_batch(x_flat[start:end]))
         return torch.cat(scores, dim=0)
+
+    def _get_controlnet_residuals(self, latent_input, t_input, embeds_input,
+                                    added_cond_kwargs_input):
+        """Run ControlNet to get residuals for UNet injection."""
+        # Expand control image to match batch size
+        control_img = self.control_image.expand(latent_input.shape[0], -1, -1, -1)
+        control_img = control_img.to(dtype=self.unet_dtype)
+
+        down_residuals, mid_residual = self.controlnet(
+            latent_input, t_input,
+            encoder_hidden_states=embeds_input,
+            controlnet_cond=control_img,
+            conditioning_scale=self.controlnet_conditioning_scale,
+            added_cond_kwargs=added_cond_kwargs_input,
+            return_dict=False,
+        )
+        return down_residuals, mid_residual
 
     def _score_batch(self, x_flat):
         """Score for a single batch. Casts fp32->fp16 for UNet, back to fp32."""
@@ -145,21 +170,39 @@ class SDXLScore:
                 "time_ids": time_ids_input,
             }
 
+            # ControlNet residuals (if available)
+            cn_kwargs = {}
+            if self.controlnet is not None:
+                down_res, mid_res = self._get_controlnet_residuals(
+                    latent_input, t_input, embeds_input, added_cond_kwargs_input)
+                cn_kwargs["down_block_additional_residuals"] = down_res
+                cn_kwargs["mid_block_additional_residual"] = mid_res
+
             eps_pred = self.unet(
                 latent_input, t_input,
                 encoder_hidden_states=embeds_input,
                 added_cond_kwargs=added_cond_kwargs_input,
                 return_dict=False,
+                **cn_kwargs,
             )[0]
 
             eps_uncond, eps_cond = eps_pred.chunk(2)
             eps_pred = eps_uncond + self.guidance_scale * (eps_cond - eps_uncond)
         else:
+            # ControlNet residuals (if available)
+            cn_kwargs = {}
+            if self.controlnet is not None:
+                down_res, mid_res = self._get_controlnet_residuals(
+                    x_latent, t_batch, prompt_embeds, added_cond_kwargs)
+                cn_kwargs["down_block_additional_residuals"] = down_res
+                cn_kwargs["mid_block_additional_residual"] = mid_res
+
             eps_pred = self.unet(
                 x_latent, t_batch,
                 encoder_hidden_states=prompt_embeds,
                 added_cond_kwargs=added_cond_kwargs,
                 return_dict=False,
+                **cn_kwargs,
             )[0]
 
         # Cast back to fp32 for Langevin numerics
@@ -452,8 +495,9 @@ def compute_knn_entropy(clip_embeddings, k=10):
 
 @torch.no_grad()
 def generate_latents(pipe, prompt, n_samples, guidance_scale, gen_steps,
-                     height, width, batch_size=4, seed=42):
-    """Generate latents from SDXL pipeline.
+                     height, width, batch_size=4, seed=42,
+                     control_image=None, controlnet_conditioning_scale=0.8):
+    """Generate latents from SDXL pipeline (with optional ControlNet).
 
     Returns:
         latents: (N, 4, H//8, W//8) in latent space
@@ -461,6 +505,12 @@ def generate_latents(pipe, prompt, n_samples, guidance_scale, gen_steps,
     device = pipe.device
     all_latents = []
     n_generated = 0
+
+    # Extra kwargs for ControlNet pipeline
+    cn_kwargs = {}
+    if control_image is not None:
+        cn_kwargs["image"] = control_image
+        cn_kwargs["controlnet_conditioning_scale"] = controlnet_conditioning_scale
 
     while n_generated < n_samples:
         bs = min(batch_size, n_samples - n_generated)
@@ -475,6 +525,7 @@ def generate_latents(pipe, prompt, n_samples, guidance_scale, gen_steps,
             width=width,
             generator=generator,
             output_type="latent",
+            **cn_kwargs,
         )
 
         latents = result.images  # (B, 4, H//8, W//8)
@@ -527,6 +578,13 @@ def parse_args():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--compile_unet", action="store_true",
                    help="Use torch.compile on UNet (experimental, adds compilation overhead)")
+    # ControlNet conditioning
+    p.add_argument("--controlnet_model_id", type=str, default=None,
+                   help="HuggingFace ControlNet model ID (e.g. xinsir/controlnet-scribble-sdxl-1.0)")
+    p.add_argument("--control_image_path", type=str, default=None,
+                   help="Path to control image (e.g. scribble PNG)")
+    p.add_argument("--controlnet_scale", type=float, default=0.8,
+                   help="ControlNet conditioning scale")
     return p.parse_args()
 
 
@@ -540,12 +598,21 @@ def main():
     latent_shape = (4, args.height // 8, args.width // 8)
     d_latent = int(np.prod(latent_shape))
 
+    # Validate ControlNet args
+    use_controlnet = args.controlnet_model_id is not None
+    if use_controlnet and args.control_image_path is None:
+        raise ValueError("--control_image_path required when using --controlnet_model_id")
+
     print(f"=== compute_sdxl_ssa_v2.py ===")
     print(f"Model: {args.model_id}")
     print(f"Name: {args.name}")
     print(f"Device: {device}")
     print(f"Prompt: '{args.prompt}'")
     print(f"Guidance scale: {args.guidance_scale}")
+    if use_controlnet:
+        print(f"ControlNet: {args.controlnet_model_id}")
+        print(f"Control image: {args.control_image_path}")
+        print(f"ControlNet scale: {args.controlnet_scale}")
     print(f"Latent shape: {latent_shape} ({d_latent}D)")
     print(f"Config: n_samples={args.n_samples}, n_traj={args.n_traj}, "
           f"T={args.T}, dt={args.dt}, t_score={args.t_score}")
@@ -566,15 +633,52 @@ def main():
     except Exception as e:
         print(f"  wandb init failed ({e}), continuing without logging")
 
+    # --- Load ControlNet (if requested) ---
+    controlnet = None
+    control_pil = None
+    control_image_tensor = None
+    if use_controlnet:
+        print("\n=== Loading ControlNet ===")
+        from diffusers import ControlNetModel
+        controlnet = ControlNetModel.from_pretrained(
+            args.controlnet_model_id,
+            torch_dtype=torch.float16,
+            use_safetensors=True,
+        )
+        controlnet = controlnet.to(device)
+        controlnet.eval()
+        cn_params = sum(p.numel() for p in controlnet.parameters())
+        print(f"  ControlNet parameters: {cn_params:,} ({cn_params/1e6:.1f}M)")
+
+        # Load and preprocess control image
+        from PIL import Image
+        control_pil = Image.open(args.control_image_path).convert("RGB")
+        control_pil = control_pil.resize((args.width, args.height))
+        print(f"  Control image: {args.control_image_path} -> {control_pil.size}")
+
+        # Preprocess to tensor for SDXLScore (normalized to [0,1], shape (1,3,H,W))
+        import torchvision.transforms as T
+        control_image_tensor = T.ToTensor()(control_pil).unsqueeze(0).to(device)
+
     # --- Load SDXL pipeline ---
     print("\n=== Loading SDXL pipeline ===")
-    from diffusers import StableDiffusionXLPipeline
-    pipe = StableDiffusionXLPipeline.from_pretrained(
-        args.model_id,
-        torch_dtype=torch.float16,
-        variant="fp16",
-        use_safetensors=True,
-    )
+    if use_controlnet:
+        from diffusers import StableDiffusionXLControlNetPipeline
+        pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
+            args.model_id,
+            controlnet=controlnet,
+            torch_dtype=torch.float16,
+            variant="fp16",
+            use_safetensors=True,
+        )
+    else:
+        from diffusers import StableDiffusionXLPipeline
+        pipe = StableDiffusionXLPipeline.from_pretrained(
+            args.model_id,
+            torch_dtype=torch.float16,
+            variant="fp16",
+            use_safetensors=True,
+        )
     pipe = pipe.to(device)
 
     unet = pipe.unet
@@ -615,6 +719,10 @@ def main():
     # --- Generate latents ---
     print(f"\n=== Generating {args.n_samples} latents ===")
     t0 = time.time()
+    gen_kwargs = {}
+    if use_controlnet:
+        gen_kwargs["control_image"] = control_pil
+        gen_kwargs["controlnet_conditioning_scale"] = args.controlnet_scale
     latents = generate_latents(
         pipe, args.prompt, args.n_samples,
         guidance_scale=args.guidance_scale,
@@ -622,6 +730,7 @@ def main():
         height=args.height, width=args.width,
         batch_size=args.gen_batch_size,
         seed=args.seed,
+        **gen_kwargs,
     )
     gen_time = time.time() - t0
     print(f"  Generated {latents.shape[0]} latents in {gen_time:.1f}s")
@@ -651,6 +760,11 @@ def main():
     # --- Build score function ---
     print(f"\n=== Building SDXLScore (t={args.t_score}, fp16 UNet) ===")
     # v2: Keep UNet in fp16 — SDXLScore handles dtype casting at boundaries
+    cn_score_kwargs = {}
+    if use_controlnet:
+        cn_score_kwargs["controlnet"] = controlnet
+        cn_score_kwargs["control_image"] = control_image_tensor
+        cn_score_kwargs["controlnet_conditioning_scale"] = args.controlnet_scale
     score_fn = SDXLScore(
         unet=unet,
         scheduler=scheduler,
@@ -664,6 +778,7 @@ def main():
         guidance_scale=args.guidance_scale,
         negative_prompt_embeds=negative_prompt_embeds,
         negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
+        **cn_score_kwargs,
     )
 
     # --- Sanity check: one Langevin step ---
@@ -706,8 +821,10 @@ def main():
     langevin_time = time.time() - t0
     print(f"  Langevin completed in {langevin_time:.1f}s ({langevin_time/3600:.1f}h)")
 
-    # Free UNet from GPU (CLIP needs the memory)
+    # Free UNet + ControlNet from GPU (CLIP needs the memory)
     del score_fn
+    if controlnet is not None:
+        controlnet = controlnet.to("cpu")
     pipe = pipe.to("cpu")
     torch.cuda.empty_cache()
 
@@ -733,6 +850,9 @@ def main():
         "gen_steps": args.gen_steps,
         "height": args.height,
         "width": args.width,
+        "controlnet_model_id": args.controlnet_model_id,
+        "control_image_path": args.control_image_path,
+        "controlnet_scale": args.controlnet_scale if use_controlnet else None,
         "n_samples": args.n_samples,
         "n_traj": args.n_traj,
         "T": args.T,
