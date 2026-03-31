@@ -1,0 +1,12 @@
+torch>=2.0
+numpy
+scipy
+matplotlib
+scikit-learn
+pandas
+pyyaml
+wandb
+diffusers==0.30.0
+accelerate
+torchvision
+transformers<=4.40.0

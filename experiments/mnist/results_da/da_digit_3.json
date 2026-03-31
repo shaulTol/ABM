@@ -1,0 +1,16 @@
+{
+  "digit": 3,
+  "noise_level": 1,
+  "n_traj": 5000,
+  "dt": 0.01,
+  "max_lag": 10000,
+  "var_f": 0.2308659702539444,
+  "optimal_lag": 5623,
+  "optimal_gap": 1.6557179406451195,
+  "da1_angle_from_pca1": 36.57968521118164,
+  "da1_eigenvalue": 4.620336055755615,
+  "da2_eigenvalue": 2.7905333042144775,
+  "pca1_eigenvalue": 22.6584529876709,
+  "pca2_eigenvalue": 16.791034698486328,
+  "elapsed_s": 9685.413681268692
+}

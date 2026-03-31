@@ -1,0 +1,39 @@
+# Class-conditional DDPM on MNIST 28x28
+# UNet with class embedding (10 classes), ~3.5M params
+model:
+  name: "ddpm-mnist-conditional"
+  base_channels: 64
+  channel_mult: [1, 2, 2]           # 3 levels: [64, 128, 128], resolutions 28->14->7
+  layers_per_block: 2
+  attention_resolution: 7            # attention at 7x7 (innermost level)
+  dropout: 0.0
+  norm_num_groups: 32                # divides 64 and 128
+  num_class_embeds: 10               # class-conditional: 10 MNIST digits
+
+data:
+  resolution: 28
+
+diffusion:
+  num_timesteps: 1000
+  beta_start: 0.0001
+  beta_end: 0.02
+  beta_schedule: "linear"
+
+training:
+  output_dir: "outputs/mnist"
+  total_steps: 100000
+  batch_size: 128
+  gradient_accumulation_steps: 1
+  learning_rate: 0.0001
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  weight_decay: 0.0
+  use_ema: true
+  ema_decay: 0.9999
+  mixed_precision: "fp16"
+  num_workers: 4
+  checkpoint_every: 25000
+  log_every: 100
+  sample_every: 5000
+  use_wandb: true
+  wandb_project: "ddpm-mnist-ssa"
