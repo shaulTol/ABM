@@ -39,14 +39,14 @@ export HF_TOKEN_PATH=/dev/null
 export WANDB_DIR=/tmp/wandb_${SLURM_JOB_ID}
 mkdir -p $WANDB_DIR
 
-EXPDIR=/sci/labs/orzuk/shaulytolk/thesis_zuk_shaul/ssa-paper/experiments/sdxl
+EXPDIR=/sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 cd $EXPDIR
 
 # --- Configuration ---
-CONTROL_IMG="data/scribble_face.png"
+CONTROL_IMG="data/circle_scribble.png"
 CN_MODEL="xinsir/controlnet-scribble-sdxl-1.0"
 CN_SCALE=0.8
-PROMPT="A photo of a human face"
+PROMPT="an image of a"
 W=7.5
 
 echo "=== SDXL SSA v2: ControlNet ==="
