@@ -2,14 +2,14 @@
 #SBATCH --job-name=cn_dps_long
 #SBATCH --partition=salmon
 #SBATCH --gres=gpu:1
-#SBATCH --time=72:00:00
+#SBATCH --time=04:00:00
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=4
 #SBATCH --output=cn_dps_long_%j.out
 #SBATCH --error=cn_dps_long_%j.err
 
-# Long run: DPS face scribble with SDXL Turbo + ControlNet
-# Production params: 2000 samples, 2000 traj, T=2500
+# Test run: DPS face scribble with SDXL Turbo + ControlNet
+# Same as short test but with dt=0.0001
 
 export PYTHONUNBUFFERED=1
 
@@ -41,9 +41,9 @@ python scripts/compute_sdxl_ssa_v2.py \
     --gen_steps 4 \
     --guidance_scale 0.0 \
     --height 512 --width 512 \
-    --n_samples 2000 \
-    --n_traj 2000 \
-    --T 2500 --dt 0.0001 --t_score 1 \
+    --n_samples 200 \
+    --n_traj 200 \
+    --T 500 --dt 0.0001 --t_score 1 \
     --score_batch_size 128 \
     --gen_batch_size 4 \
     --compute_entropy --entropy_k 10 \
