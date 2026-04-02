@@ -5,7 +5,7 @@
 #SBATCH --time=00:30:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
-#SBATCH --array=0
+#SBATCH --array=0-1
 #SBATCH --output=cn_gen_bat_%A_%a.out
 #SBATCH --error=cn_gen_bat_%A_%a.err
 
@@ -28,9 +28,15 @@ cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 # Array config
 case $SLURM_ARRAY_TASK_ID in
     0)
-        PROMPT="a superrealistic professional photograph of an androgynous person"
-        OUTDIR="output_controlnet_face_androgynous"
+        PROMPT="a superrealistic professional photograph of"
+        OUTDIR="output_dps_guided_200"
         CONTROL="data/dps_face_scribble.png"
+        CS=0.5
+        ;;
+    1)
+        PROMPT="a superrealistic professional photograph of"
+        OUTDIR="output_circle_200"
+        CONTROL="data/circle_scribble.png"
         CS=0.5
         ;;
 esac
@@ -43,10 +49,10 @@ python scripts/generate_controlnet_samples.py \
     --model_id "stabilityai/sdxl-turbo" \
     --control_image "$CONTROL" \
     --prompt "$PROMPT" \
-    --n 100 \
+    --n 200 \
     --controlnet_scale $CS \
     --guidance_scale 0.0 \
-    --steps 4 \
+    --steps 2 \
     --output_dir "$OUTDIR" \
     --seed 42
 
