@@ -10,7 +10,7 @@
 #SBATCH --error=cn_ssa_cmp_%A_%a.err
 
 # ControlNet SSA comparison: circle scribble vs DPS face scribble
-# Both use SDXL Turbo + ControlNet-Scribble, CFG=0.0, 4 gen steps
+# Matching collaborator eval params: 2 gen steps, cs=0.5, dt=0.0001
 
 export PYTHONUNBUFFERED=1
 
@@ -44,7 +44,7 @@ RUN_NAME=${NAMES[$SLURM_ARRAY_TASK_ID]}
 
 # Shared params
 CN_MODEL="xinsir/controlnet-scribble-sdxl-1.0"
-CN_SCALE=0.8
+CN_SCALE=0.5
 PROMPT="a superrealistic professional photograph of"
 
 echo "=== ControlNet SSA Compare: $RUN_NAME ==="
@@ -57,12 +57,12 @@ python scripts/compute_sdxl_ssa_v2.py \
     --model_id "stabilityai/sdxl-turbo" \
     --name "sdxl_ssa_${RUN_NAME}" \
     --prompt "$PROMPT" \
-    --gen_steps 4 \
+    --gen_steps 2 \
     --guidance_scale 0.0 \
     --height 512 --width 512 \
     --n_samples 200 \
     --n_traj 200 \
-    --T 500 --dt 0.02 --t_score 1 \
+    --T 500 --dt 0.0001 --t_score 1 \
     --score_batch_size 128 \
     --gen_batch_size 4 \
     --compute_entropy --entropy_k 10 \
