@@ -27,12 +27,12 @@ cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 python scripts/generate_controlnet_samples.py \
     --model_id "stabilityai/sdxl-turbo" \
     --control_image data/black_512.png \
-    --prompt "a superrealistic professional photograph of" \
+    --prompt "a superrealistic professional photograph of an immigrant from" \
     --n 100 \
     --controlnet_scale 0.5 \
     --guidance_scale 0.0 \
     --steps 4 \
-    --output_dir output_controlnet_black_generic \
+    --output_dir output_controlnet_black_immigrant \
     --seed 42
 
 echo "Done: $(date)"
