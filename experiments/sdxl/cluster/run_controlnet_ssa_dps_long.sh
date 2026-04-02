@@ -43,7 +43,7 @@ python scripts/compute_sdxl_ssa_v2.py \
     --height 512 --width 512 \
     --n_samples 2000 \
     --n_traj 2000 \
-    --T 2500 --dt 0.02 --t_score 1 \
+    --T 2500 --dt 0.0001 --t_score 1 \
     --score_batch_size 128 \
     --gen_batch_size 4 \
     --compute_entropy --entropy_k 10 \
