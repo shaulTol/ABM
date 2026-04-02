@@ -28,9 +28,9 @@ python scripts/noise_denoise_turbo.py \
     --image output_controlnet_face_androgynous/sample_006.png \
     --prompt "a superrealistic professional photograph of an androgynous person" \
     --n 20 \
-    --strength 0.5 \
+    --strength 0.8 \
     --steps 4 \
-    --output_dir output_noise_denoise_androgynous \
+    --output_dir output_noise_denoise_androgynous_s08 \
     --seed 42
 
 echo "Done: $(date)"
