@@ -28,22 +28,22 @@ cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 # Array config
 case $SLURM_ARRAY_TASK_ID in
     0)
-        PROMPT="a superrealistic professional photograph of a woman from"
-        OUTDIR="output_controlnet_black_woman"
+        PROMPT="a superrealistic professional photograph of a woman who's ancestors came from"
+        OUTDIR="output_controlnet_black_woman_ancestors"
         CONTROL="data/black_512.png"
         CS=0.5
         ;;
     1)
-        PROMPT="a superrealistic professional photograph of a man from"
-        OUTDIR="output_controlnet_black_man_from"
+        PROMPT="a superrealistic professional photograph of a man who's ancestors came from"
+        OUTDIR="output_controlnet_black_man_ancestors"
         CONTROL="data/black_512.png"
         CS=0.5
         ;;
     2)
-        PROMPT="a superrealistic professional photograph of a person from"
-        OUTDIR="output_controlnet_face_person"
-        CONTROL="data/dps_face_scribble.png"
-        CS=0.8
+        PROMPT="a superrealistic professional photograph of a person who's ancestors came from"
+        OUTDIR="output_controlnet_black_person_ancestors"
+        CONTROL="data/black_512.png"
+        CS=0.5
         ;;
 esac
 
