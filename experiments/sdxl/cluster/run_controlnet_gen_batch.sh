@@ -5,7 +5,7 @@
 #SBATCH --time=00:30:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
-#SBATCH --array=0-2
+#SBATCH --array=0
 #SBATCH --output=cn_gen_bat_%A_%a.out
 #SBATCH --error=cn_gen_bat_%A_%a.err
 
@@ -28,21 +28,9 @@ cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 # Array config
 case $SLURM_ARRAY_TASK_ID in
     0)
-        PROMPT="a superrealistic professional photograph of a woman who's ancestors came from"
-        OUTDIR="output_controlnet_black_woman_ancestors"
-        CONTROL="data/black_512.png"
-        CS=0.5
-        ;;
-    1)
-        PROMPT="a superrealistic professional photograph of a man who's ancestors came from"
-        OUTDIR="output_controlnet_black_man_ancestors"
-        CONTROL="data/black_512.png"
-        CS=0.5
-        ;;
-    2)
-        PROMPT="a superrealistic professional photograph of a person who's ancestors came from"
-        OUTDIR="output_controlnet_black_person_ancestors"
-        CONTROL="data/black_512.png"
+        PROMPT="a superrealistic professional photograph of an androgynous person"
+        OUTDIR="output_controlnet_face_androgynous"
+        CONTROL="data/dps_face_scribble.png"
         CS=0.5
         ;;
 esac
