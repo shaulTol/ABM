@@ -7,7 +7,8 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from sklearn.decomposition import PCA
 from PIL import Image
 from diffusers import AutoencoderKL
-from latent_clip import LatentCLIPEmbedder
+import latent_clip
+from huggingface_hub import hf_hub_download
 
 
 def main():
@@ -30,13 +31,18 @@ def main():
     print(f"Loaded {N} latents from {args.latents_npz}")
 
     # Latent-CLIP embedding
-    embedder = LatentCLIPEmbedder()
-    embedder.eval().to(device)
+    checkpoint_path = hf_hub_download(
+        "wendlerc/latent-clip-b-8-512-34b-80k", "checkpoints/epoch_34.pt"
+    )
+    model_lc, _, _ = latent_clip.create_model_and_transforms(
+        "Latent-ViT-B-8-512", pretrained=checkpoint_path, device=device,
+    )
+    model_lc.eval()
     with torch.no_grad():
         clip_feats = []
         for i in range(0, N, 32):
             batch = x0_4d[i:i+32].to(device)
-            emb = embedder(batch)
+            emb = model_lc.encode_image(batch)
             emb = emb / emb.norm(dim=-1, keepdim=True)
             clip_feats.append(emb.cpu().numpy())
     clip_feats = np.concatenate(clip_feats, axis=0)
