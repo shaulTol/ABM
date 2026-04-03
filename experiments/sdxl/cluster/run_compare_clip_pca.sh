@@ -25,7 +25,6 @@ export HF_TOKEN_PATH=/dev/null
 cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 
 python scripts/compare_clip_latentclip_pca.py \
-    --latents_npz results_controlnet/sdxl_latents_sdxl_ssa_cn_dps_face.npz \
-    --image_dir output_dps_guided_200
+    --latents_npz results_controlnet/sdxl_latents_sdxl_ssa_cn_dps_face.npz
 
 echo "Done: $(date)"
