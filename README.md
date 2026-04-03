@@ -1,6 +1,6 @@
 # ABM — Autocorrelation-Based Multimodality
 
-Code and results for the NeurIPS 2026 paper *"Measuring and Decomposing Multimodality via Canonical Diffusions"*. The ABM framework provides two tools: **SSA** (Sum of Squared Autocorrelations), a scalar multimodality measure, and **DA** (Dominant Autocorrelation) directions, a directional decomposition ordered by metastability.
+Code and results for the paper *"Measuring and Decomposing Multimodality via Canonical Diffusions"*. The ABM framework provides two tools: **SSA** (Sum of Squared Autocorrelations), a scalar multimodality measure, and **DA** (Dominant Autocorrelation) directions, a directional decomposition ordered by metastability.
 
 
 ## Setup
