@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=dps_compare
-#SBATCH --partition=catfish
+#SBATCH --partition=salmon
 #SBATCH --gres=gpu:1
-#SBATCH --time=01:00:00
+#SBATCH --time=03:00:00
 #SBATCH --mem=48G
 #SBATCH --cpus-per-task=4
 #SBATCH --array=0-5
