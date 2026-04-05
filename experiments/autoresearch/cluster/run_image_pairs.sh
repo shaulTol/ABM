@@ -34,7 +34,7 @@ cd $EXPDIR
 
 python -u gen_image_pairs.py \
     --n_pairs 50 \
-    --strength 0.3 \
-    --output_dir results_image_pairs
+    --strength 0.5 \
+    --output_dir results_image_pairs_s05
 
 echo "Done: $(date)"
