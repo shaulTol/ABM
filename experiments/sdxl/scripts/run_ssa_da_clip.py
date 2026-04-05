@@ -339,6 +339,31 @@ def main():
         print(f"    {name:<15} rho = {r['rho']:>7.4f} (p={r['pvalue']:.2e})")
 
     # =====================================================================
+    # Stage 5a: Gender-sliced SSA
+    # =====================================================================
+    print("\n=== Gender-sliced SSA ===")
+    gender_axis = analyzer.probe_axes["gender"]  # (768,) normalized
+    z0_c = z0_clip - results["mu"]
+    s0_gender = z0_c @ gender_axis  # (N,)
+    s0_gender_c = s0_gender - s0_gender.mean()
+    var_gender = np.mean(s0_gender_c ** 2)
+
+    rho_sq_gender = []
+    for lag in results["snapshot_lags"]:
+        if lag not in z_snapshots:
+            continue
+        z_tau_c = z_snapshots[lag] - results["mu"]
+        s_tau_gender = z_tau_c @ gender_axis
+        s_tau_gender_c = s_tau_gender - s_tau_gender.mean()
+        rho_g = np.mean(s0_gender_c * s_tau_gender_c) / max(var_gender, 1e-12)
+        rho_sq_gender.append(rho_g ** 2)
+    rho_sq_gender = np.array(rho_sq_gender)
+    ssa_gender_sliced = float(np.mean(rho_sq_gender))
+    print(f"  SSA_gender_sliced = {ssa_gender_sliced:.6f}")
+    print(f"  SSA_full          = {results['ssa']:.6f}")
+    print(f"  Ratio (sliced/full) = {ssa_gender_sliced / max(results['ssa'], 1e-12):.4f}")
+
+    # =====================================================================
     # Stage 5b: Optional LC comparison
     # =====================================================================
     lc_results = None
@@ -431,6 +456,8 @@ def main():
         "da2_optimal_lag": results["da2_optimal_lag"],
         "da2_gap": results["da2_gap"],
         "da2_cosines": da2_cosines,
+        "ssa_gender_sliced": ssa_gender_sliced,
+        "rho_sq_gender": rho_sq_gender.tolist(),
         "gen_time_s": gen_time,
         "langevin_time_s": langevin_time,
         "embed_time_s": embed_time,
@@ -456,6 +483,7 @@ def main():
         "mu_clip": results["mu"],
         "da1_eigvec": results["da1_eigvec"],
         "da2_eigvec": results["da2_eigvec"],
+        "rho_sq_gender": rho_sq_gender,
     }
     for i, lag in enumerate(results["snapshot_lags"]):
         npz_data[f"eigenvalues_lag{lag}"] = results["eigenvalues"][i]
@@ -491,6 +519,7 @@ def main():
     print(f"  Model: {args.model_id}")
     print(f"  Guidance: {args.guidance_scale}")
     print(f"  SSA_CLIP = {results['ssa']:.6f}")
+    print(f"  SSA_gender_sliced = {ssa_gender_sliced:.6f}")
     if entropy is not None:
         print(f"  Entropy = {entropy:.4f}")
     print(f"  DA1: gap={results['da1_gap']:.2f}x at lag={results['da1_optimal_lag']}")
