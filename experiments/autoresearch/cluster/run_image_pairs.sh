@@ -32,9 +32,9 @@ export HF_TOKEN_PATH=/dev/null
 EXPDIR=/sci/labs/orzuk/shaulytolk/ABM/experiments/autoresearch
 cd $EXPDIR
 
-python -u gen_image_pairs.py \
+python -u gen_image_pairs_v2.py \
     --n_pairs 50 \
     --strength 0.5 \
-    --output_dir results_image_pairs_s05
+    --output_dir results_image_pairs_v2
 
 echo "Done: $(date)"
