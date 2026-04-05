@@ -149,6 +149,48 @@ def main():
         r = correlations_full[name]
         print(f"  {name:<15} {r['rho']:>12.4f} {r['pvalue']:>10.2e}")
 
+    # --- PCA on LC embeddings + correlate with CLIP probes ---
+    print("\n=== PCA on Latent-CLIP embeddings ===")
+    z0_lc_mu = z0_lc.mean(axis=0)
+    z0_lc_c = z0_lc - z0_lc_mu
+    cov = (z0_lc_c.T @ z0_lc_c) / N
+    eigvals_pca, eigvecs_pca = np.linalg.eigh(cov)
+    # Sort descending
+    idx_sort = eigvals_pca.argsort()[::-1]
+    eigvals_pca = eigvals_pca[idx_sort]
+    eigvecs_pca = eigvecs_pca[:, idx_sort]
+
+    var_explained = eigvals_pca / eigvals_pca.sum()
+    print(f"  PC1 variance ratio: {var_explained[0]:.4f}")
+    print(f"  PC2 variance ratio: {var_explained[1]:.4f}")
+    print(f"  PC3 variance ratio: {var_explained[2]:.4f}")
+
+    # Project onto top PCs
+    pca_correlations = {}
+    for k in range(3):
+        pc_name = f"PC{k+1}"
+        pc_scores = z0_lc_c @ eigvecs_pca[:, k]  # (N,)
+        pc_corr = analyzer.correlate_with_ranking(clip_all, pc_scores)
+        pca_correlations[pc_name] = pc_corr
+
+        print(f"\n  {pc_name} (var={var_explained[k]:.3f}) vs CLIP text probes:")
+        print(f"  {'Probe':<15} {'Spearman rho':>12} {'p-value':>10}")
+        print(f"  {'-'*37}")
+        for name in analyzer.probe_names:
+            r = pc_corr[name]
+            print(f"  {name:<15} {r['rho']:>12.4f} {r['pvalue']:>10.2e}")
+
+    # Cosine between DA1 and PC1 (both in LC space)
+    cos_da1_pc1 = float(np.dot(da1_eigvec, eigvecs_pca[:, 0]))
+    cos_da1_pc2 = float(np.dot(da1_eigvec, eigvecs_pca[:, 1]))
+    print(f"\n  cos(DA1, PC1) = {cos_da1_pc1:.4f}")
+    print(f"  cos(DA1, PC2) = {cos_da1_pc2:.4f}")
+    if da2_eigvec is not None:
+        cos_da2_pc1 = float(np.dot(da2_eigvec, eigvecs_pca[:, 0]))
+        cos_da2_pc2 = float(np.dot(da2_eigvec, eigvecs_pca[:, 1]))
+        print(f"  cos(DA2, PC1) = {cos_da2_pc1:.4f}")
+        print(f"  cos(DA2, PC2) = {cos_da2_pc2:.4f}")
+
     # --- DA2 analysis (if available) ---
     da2_results = {}
     if da2_eigvec is not None:
@@ -175,6 +217,14 @@ def main():
                             z0_lc_centered @ da2_eigvec,
                             n=args.n_grid, path=grid2_path, device=device)
 
+    # --- PCA grids ---
+    print("\n=== Generating PCA grid PNGs ===")
+    for k in range(min(3, len(eigvecs_pca[0]))):
+        pc_scores = z0_lc_c @ eigvecs_pca[:, k]
+        pc_grid_path = os.path.join(output_dir, f"interpret_pc{k+1}_{args.name}_grid.png")
+        make_topbottom_grid(vae, torch.from_numpy(x0).float(), pc_scores,
+                            n=args.n_grid, path=pc_grid_path, device=device)
+
     # --- Save results ---
     results = {
         "name": args.name,
@@ -186,6 +236,10 @@ def main():
         "da1_correlations_extremes": correlations,
         "da1_correlations_full": correlations_full,
         "da2_correlations_full": da2_results,
+        "pca_correlations": pca_correlations,
+        "pca_variance_explained": var_explained[:5].tolist(),
+        "cos_da1_pc1": cos_da1_pc1,
+        "cos_da1_pc2": cos_da1_pc2,
         "time_s": time.time() - t_start,
     }
 
