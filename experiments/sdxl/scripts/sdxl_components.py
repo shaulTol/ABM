@@ -395,8 +395,8 @@ def make_topbottom_grid(vae, latents_flat, scores, n=8, path="grid.png",
         latents_flat = torch.from_numpy(latents_flat).float()
 
     sorted_idx = np.argsort(scores)
-    top_idx = sorted_idx[-n:][::-1]
-    bot_idx = sorted_idx[:n]
+    top_idx = sorted_idx[-n:][::-1].copy()
+    bot_idx = sorted_idx[:n].copy()
 
     top_images = decode_latents_to_pil(vae, latents_flat[top_idx],
                                        latent_shape=latent_shape, device=device)
