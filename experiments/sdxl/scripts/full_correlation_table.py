@@ -84,6 +84,41 @@ def correlation_matrix(scores_dict):
     return mat, names
 
 
+def orthogonalize_probes(scores_dict, probe_names):
+    """For each probe, regress out all other probes and keep residuals.
+
+    Args:
+        scores_dict: dict of (N,) score arrays (DA, PC, probes)
+        probe_names: list of keys in scores_dict that are text probes
+
+    Returns:
+        dict with same keys as scores_dict but probe scores replaced by
+        orthogonalized residuals. DA/PC scores are unchanged.
+    """
+    out = dict(scores_dict)  # shallow copy
+    probe_scores = {k: scores_dict[k] for k in probe_names if k in scores_dict}
+    if len(probe_scores) < 2:
+        return out
+
+    for target_name in probe_names:
+        if target_name not in scores_dict:
+            continue
+        # Regressors: all other probes
+        other_names = [k for k in probe_names if k != target_name and k in scores_dict]
+        if not other_names:
+            continue
+        y = scores_dict[target_name]
+        X = np.column_stack([scores_dict[k] for k in other_names])
+        # Add intercept
+        X_int = np.column_stack([X, np.ones(len(y))])
+        # Least-squares
+        beta, _, _, _ = np.linalg.lstsq(X_int, y, rcond=None)
+        residual = y - X_int @ beta
+        out[target_name] = residual
+
+    return out
+
+
 def print_table(mat, names, title=""):
     """Pretty-print correlation matrix."""
     # Strip prefix for display
@@ -202,6 +237,18 @@ def main():
     print_table(lc_mat, lc_names, title=f"LC Space — {args.label}")
 
     # =====================================================================
+    # Orthogonalized CLIP table: each probe residualized against all others
+    # =====================================================================
+    print("\n=== CLIP space — orthogonalized probes ===")
+    clip_probe_keys = [k for k in clip_scores if any(
+        k.endswith(f"_{pn}") for pn in clip_probe_axes
+    )]
+    clip_scores_orth = orthogonalize_probes(clip_scores, clip_probe_keys)
+    clip_orth_mat, clip_orth_names = correlation_matrix(clip_scores_orth)
+    print_table(clip_orth_mat, clip_orth_names,
+                title=f"CLIP Space (orthogonalized probes) — {args.label}")
+
+    # =====================================================================
     # Cross-space table: correlate LC directions with CLIP directions
     # =====================================================================
     print("\n=== Cross-space (LC scores vs CLIP scores) ===")
@@ -220,6 +267,8 @@ def main():
         "N": N,
         "clip_names": clip_names,
         "clip_corr": clip_mat.tolist(),
+        "clip_orth_names": clip_orth_names,
+        "clip_orth_corr": clip_orth_mat.tolist(),
         "lc_names": lc_names,
         "lc_corr": lc_mat.tolist(),
         "cross_names": cross_names,
