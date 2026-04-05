@@ -408,66 +408,87 @@ def _get_auto_corr_str(name, dir1, dir2):
 
 
 def page_auto_da_vs_pca(pdf, name, label):
-    """One page per autoresearch experiment: DA1 vs PC1 side by side, DA2 vs PC2."""
-    fig = plt.figure(figsize=(16, 14))
+    """One page per autoresearch experiment: DA1 vs PC1 side by side + curves + heatmap."""
+    # Strip prefix for grid filenames
+    short = name.replace("autoresearch_", "")
+
+    fig = plt.figure(figsize=(16, 16))
     fig.suptitle(f"{label}: DA vs PCA Comparison (CLIP space, dt=0.001)\n{_get_auto_stats(name)}",
                  fontsize=13, fontweight="bold")
 
-    gs = fig.add_gridspec(2, 2, hspace=0.3, wspace=0.15)
-
-    # We only have DA1 grid from the cluster. For PC-sorted grids we'd need
-    # to decode on cluster. But we can show DA1 grid + curves side by side.
-    # Actually let's show: DA1 grid, curves png, and the heatmap.
+    gs = fig.add_gridspec(3, 2, hspace=0.3, wspace=0.15, height_ratios=[1, 1, 1.2])
 
     da1_grid = os.path.join(AUTO, f"clip_da_{name}_da1_grid.png")
+    pc1_grid = os.path.join(AUTO, f"{name}_pc1_grid.png")
+    pc2_grid = os.path.join(AUTO, f"{name}_pc2_grid.png")
     curves = os.path.join(AUTO, f"clip_da_{name}_curves.png")
     corr_path = os.path.join(AUTO, f"corr_table_{name}.json")
 
-    # Top-left: DA1 grid
-    ax1 = fig.add_subplot(gs[0, 0])
-    if os.path.exists(da1_grid):
-        ax1.imshow(Image.open(da1_grid))
-    else:
-        ax1.text(0.5, 0.5, "DA1 grid not found", ha="center", va="center",
-                 transform=ax1.transAxes)
-    corr_da1_pc1 = _get_auto_corr_str(name, "DA1", "PC1")
     corr_da1_gender = _get_auto_corr_str(name, "DA1", "gender")
-    ax1.set_title(f"DA1 sorted: Top-8 vs Bottom-8\n{corr_da1_gender}", fontsize=10, fontweight="bold")
-    ax1.axis("off")
+    corr_da1_pc1 = _get_auto_corr_str(name, "DA1", "PC1")
 
-    # Top-right: Rho decay + gap profile (curves png)
-    ax2 = fig.add_subplot(gs[0, 1])
-    if os.path.exists(curves):
-        ax2.imshow(Image.open(curves))
-        ax2.set_title("Rho decay & gap profiles", fontsize=10, fontweight="bold")
+    # Row 0, left: DA1 grid
+    ax_da1 = fig.add_subplot(gs[0, 0])
+    if os.path.exists(da1_grid):
+        ax_da1.imshow(Image.open(da1_grid))
     else:
-        # Fallback: plot rho from npz
+        ax_da1.text(0.5, 0.5, "DA1 grid not found", ha="center", va="center",
+                    transform=ax_da1.transAxes)
+    ax_da1.set_title(f"DA1 sorted: Top-8 vs Bottom-8\n{corr_da1_gender}", fontsize=10, fontweight="bold")
+    ax_da1.axis("off")
+
+    # Row 0, right: PC1 grid
+    ax_pc1 = fig.add_subplot(gs[0, 1])
+    if os.path.exists(pc1_grid):
+        ax_pc1.imshow(Image.open(pc1_grid))
+    else:
+        ax_pc1.text(0.5, 0.5, "PC1 grid not found", ha="center", va="center",
+                    transform=ax_pc1.transAxes)
+    ax_pc1.set_title(f"PC1 sorted: Top-8 vs Bottom-8\n{corr_da1_pc1}", fontsize=10, fontweight="bold")
+    ax_pc1.axis("off")
+
+    # Row 1, left: PC2 grid
+    ax_pc2 = fig.add_subplot(gs[1, 0])
+    if os.path.exists(pc2_grid):
+        ax_pc2.imshow(Image.open(pc2_grid))
+    else:
+        ax_pc2.text(0.5, 0.5, "PC2 grid not found", ha="center", va="center",
+                    transform=ax_pc2.transAxes)
+    ax_pc2.set_title("PC2 sorted: Top-8 vs Bottom-8", fontsize=10, fontweight="bold")
+    ax_pc2.axis("off")
+
+    # Row 1, right: Rho decay curves
+    ax_rho = fig.add_subplot(gs[1, 1])
+    if os.path.exists(curves):
+        ax_rho.imshow(Image.open(curves))
+        ax_rho.set_title("Rho decay & gap profiles", fontsize=10, fontweight="bold")
+        ax_rho.axis("off")
+    else:
         da_path = os.path.join(AUTO, f"clip_da_{name}.npz")
         if os.path.exists(da_path):
             da_data = dict(np.load(da_path, allow_pickle=True))
             if "rho_sq" in da_data and "snapshot_lags" in da_data:
-                ax2.plot(da_data["snapshot_lags"], da_data["rho_sq"], "o-",
-                         markersize=3, color="steelblue")
-                ax2.set_xlabel("Lag")
-                ax2.set_ylabel(r"$\rho^2(\tau)$")
-                ax2.set_ylim(0, 1.05)
-                ax2.set_title("Rho decay", fontsize=10, fontweight="bold")
-    ax2.axis("off")
+                ax_rho.plot(da_data["snapshot_lags"], da_data["rho_sq"], "o-",
+                            markersize=3, color="steelblue")
+                ax_rho.set_xlabel("Lag")
+                ax_rho.set_ylabel(r"$\rho^2(\tau)$")
+                ax_rho.set_ylim(0, 1.05)
+                ax_rho.set_title("Rho decay", fontsize=10, fontweight="bold")
 
-    # Bottom-left: Correlation heatmap
-    ax3 = fig.add_subplot(gs[1, 0])
+    # Row 2, left: Correlation heatmap
+    ax_hm = fig.add_subplot(gs[2, 0])
     if os.path.exists(corr_path):
         data = load_corr(corr_path)
         mat = np.array(data["clip_corr"])
         names = data["clip_names"]
-        plot_heatmap(ax3, mat, names, f"{label} — CLIP Correlation Table")
+        plot_heatmap(ax_hm, mat, names, f"{label} — CLIP Correlation Table")
     else:
-        ax3.text(0.5, 0.5, "Corr table not found", ha="center", va="center",
-                 transform=ax3.transAxes)
+        ax_hm.text(0.5, 0.5, "Corr table not found", ha="center", va="center",
+                   transform=ax_hm.transAxes)
 
-    # Bottom-right: Key numbers text summary
-    ax4 = fig.add_subplot(gs[1, 1])
-    ax4.axis("off")
+    # Row 2, right: Text summary
+    ax_txt = fig.add_subplot(gs[2, 1])
+    ax_txt.axis("off")
     json_path = os.path.join(AUTO, f"clip_da_{name}.json")
     if os.path.exists(json_path) and os.path.exists(corr_path):
         with open(json_path) as f:
@@ -475,34 +496,25 @@ def page_auto_da_vs_pca(pdf, name, label):
         data = load_corr(corr_path)
 
         lines = [f"{label} Summary", "=" * 40, ""]
-
-        # SSA
         lines.append(f"SSA (CLIP): {jdata.get('ssa_clip', 0):.3f}")
         lines.append(f"SSA (LC):   {jdata.get('ssa_lc', 0):.3f}")
         lines.append("")
-
-        # DA1
         lines.append(f"DA1 gap: {jdata.get('da1_gap', 0):.2f} @ lag={jdata.get('da1_optimal_lag', 0)}")
         lines.append(f"DA2 gap: {jdata.get('da2_gap', 0):.2f} @ lag={jdata.get('da2_optimal_lag', 0)}")
         lines.append("")
-
-        # Key correlations
         lines.append("DA1 correlations:")
         for probe, vals in sorted(jdata.get("da1_correlations", {}).items(),
                                    key=lambda x: abs(x[1]["rho"]), reverse=True):
             lines.append(f"  {probe:>12}: rho={vals['rho']:+.3f}")
         lines.append("")
-
-        # DA1 vs PC1/PC2
         lines.append("DA vs PCA:")
         for pair in [("DA1", "PC1"), ("DA1", "PC2"), ("DA2", "PC1"), ("DA2", "PC2")]:
             lines.append(f"  corr({pair[0]},{pair[1]}): {get_clip_corr(data, f'CLIP_{pair[0]}', f'CLIP_{pair[1]}'):.3f}")
-
         lines.append("")
         lines.append(f"Cross-space DA1 Spearman: {jdata.get('cross_space_da1_spearman', 0):.3f}")
 
-        ax4.text(0.05, 0.95, "\n".join(lines), transform=ax4.transAxes,
-                 fontsize=9, fontfamily="monospace", va="top")
+        ax_txt.text(0.05, 0.95, "\n".join(lines), transform=ax_txt.transAxes,
+                    fontsize=9, fontfamily="monospace", va="top")
 
     pdf.savefig(fig, bbox_inches="tight")
     plt.close(fig)
@@ -681,62 +693,135 @@ def page_auto_summary_comparison(pdf):
     plt.close(fig)
 
 
+def page_one_experiment(pdf, label, da1_grid_path, pc1_grid_path, corr_path,
+                        scribble_path=None, prompt=None):
+    """One page per experiment: DA1 vs PC1 grids (top) + raw vs orth heatmaps (bottom)."""
+    title = label
+    if prompt:
+        title += f'\nprompt: "{prompt}"'
+
+    fig = plt.figure(figsize=(16, 14))
+    fig.suptitle(title, fontsize=14, fontweight="bold")
+
+    has_scribble = scribble_path and os.path.exists(scribble_path)
+
+    # Use nested gridspecs: top row adapts to scribble, bottom always 2 cols
+    from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+    outer = GridSpec(2, 1, figure=fig, hspace=0.3, height_ratios=[1, 1.3],
+                     top=0.92, bottom=0.04)
+    if has_scribble:
+        gs_top = GridSpecFromSubplotSpec(1, 3, subplot_spec=outer[0],
+                                         width_ratios=[0.6, 1, 1], wspace=0.15)
+    else:
+        gs_top = GridSpecFromSubplotSpec(1, 2, subplot_spec=outer[0], wspace=0.15)
+    gs_bot = GridSpecFromSubplotSpec(1, 2, subplot_spec=outer[1], wspace=0.25)
+
+    if has_scribble:
+        ax_scr = fig.add_subplot(gs_top[0, 0])
+        ax_scr.imshow(Image.open(scribble_path))
+        ax_scr.set_title("Scribble", fontsize=11, fontweight="bold")
+        ax_scr.axis("off")
+        col_da, col_pc = 1, 2
+    else:
+        col_da, col_pc = 0, 1
+
+    ax_da = fig.add_subplot(gs_top[0, col_da])
+    if os.path.exists(da1_grid_path):
+        ax_da.imshow(Image.open(da1_grid_path))
+    else:
+        ax_da.text(0.5, 0.5, "DA1 grid not found", ha="center", va="center",
+                   transform=ax_da.transAxes)
+    ax_da.set_title("DA1 sorted: Top-8 vs Bottom-8", fontsize=11, fontweight="bold")
+    ax_da.axis("off")
+
+    ax_pc = fig.add_subplot(gs_top[0, col_pc])
+    if os.path.exists(pc1_grid_path):
+        ax_pc.imshow(Image.open(pc1_grid_path))
+    else:
+        ax_pc.text(0.5, 0.5, "PC1 grid not found", ha="center", va="center",
+                   transform=ax_pc.transAxes)
+    ax_pc.set_title("PC1 sorted: Top-8 vs Bottom-8", fontsize=11, fontweight="bold")
+    ax_pc.axis("off")
+
+    ax_raw = fig.add_subplot(gs_bot[0, 0])
+    ax_orth = fig.add_subplot(gs_bot[0, 1])
+
+    if os.path.exists(corr_path):
+        data = load_corr(corr_path)
+        mat = np.array(data["clip_corr"])
+        names = data["clip_names"]
+        plot_heatmap(ax_raw, mat, names, "Raw correlations")
+
+        if "clip_orth_corr" in data:
+            orth_mat = np.array(data["clip_orth_corr"])
+            orth_names = data["clip_orth_names"]
+            plot_heatmap(ax_orth, orth_mat, orth_names, "Orthogonalized probes")
+        else:
+            ax_orth.text(0.5, 0.5, "No orthogonalized data", ha="center",
+                         va="center", transform=ax_orth.transAxes)
+            ax_orth.set_title("Orthogonalized probes")
+    else:
+        ax_raw.text(0.5, 0.5, "Corr table not found", ha="center",
+                    va="center", transform=ax_raw.transAxes)
+        ax_orth.text(0.5, 0.5, "Corr table not found", ha="center",
+                     va="center", transform=ax_orth.transAxes)
+
+    pdf.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+
+def page_all_images(pdf, label, all_images_path):
+    """Full page showing all N generated images as a grid."""
+    fig = plt.figure(figsize=(16, 16))
+    fig.suptitle(f"{label} — All Generated Images", fontsize=14, fontweight="bold")
+
+    ax = fig.add_subplot(111)
+    if os.path.exists(all_images_path):
+        img = Image.open(all_images_path)
+        ax.imshow(img)
+    else:
+        ax.text(0.5, 0.5, f"Not found:\n{os.path.basename(all_images_path)}",
+                ha="center", va="center", transform=ax.transAxes, fontsize=14)
+    ax.axis("off")
+
+    pdf.savefig(fig, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main():
     out_path = os.path.join(BASE, "correlation_analysis.pdf")
 
+    # (label, da1_grid, pc1_grid, corr_json, scribble, prompt, all_images)
+    experiments = [
+        ("Circle",
+         os.path.join(BASE, "clip_da_clip_cn_circle_dt0.001_da1_grid.png"),
+         os.path.join(BASE, "clip_cn_circle_dt0.001_pc1_grid.png"),
+         os.path.join(BASE, "corr_table_clip_cn_circle_dt0.001.json"),
+         os.path.join(DATA, "circle_scribble.png"),
+         "a superrealistic professional photograph of",
+         os.path.join(BASE, "all_images_clip_cn_circle_dt0.001.png")),
+        ("Face (DPS)",
+         os.path.join(BASE, "clip_da_clip_cn_dps_face_dt0.001_da1_grid.png"),
+         os.path.join(BASE, "clip_cn_dps_face_dt0.001_pc1_grid.png"),
+         os.path.join(BASE, "corr_table_clip_cn_dps_face_dt0.001.json"),
+         os.path.join(DATA, "dps_face_scribble.png"),
+         "a superrealistic professional photograph of",
+         os.path.join(BASE, "all_images_clip_cn_dps_face_dt0.001.png")),
+        ("Square",
+         os.path.join(AUTO, "clip_da_autoresearch_square_da1_grid.png"),
+         os.path.join(AUTO, "autoresearch_square_pc1_grid.png"),
+         os.path.join(AUTO, "corr_table_autoresearch_square.json"),
+         os.path.join(DATA, "face_boxed_scribble.png"),
+         "a street portrait",
+         os.path.join(AUTO, "all_images_autoresearch_square.png")),
+    ]
+
     with PdfPages(out_path) as pdf:
-        # --- Circle/Face section ---
-        print("Page 1: Scribbles + DA1 grids...")
-        page_scribbles_and_direction_grids(pdf, "da1", "DA1")
-
-        print("Page 2: Scribbles + PC1 grids...")
-        page_scribbles_and_direction_grids(pdf, "pc1", "PC1")
-
-        print("Page 3: DA1 vs PC1 comparison...")
-        page_da_vs_pca_comparison(pdf)
-
-        print("Page 4: PC2 grids...")
-        page_pc2_grids(pdf)
-
-        print("Page 5: Rho decay curves...")
-        page_rho_decay(pdf)
-
-        print("Page 6: CLIP heatmaps...")
-        page_clip_heatmaps(pdf)
-
-        print("Page 7: Cross-space heatmaps...")
-        page_cross_heatmaps(pdf)
-
-        print("Page 8: Summary bars...")
-        page_summary_bars(pdf)
-
-        print("Page 9: DA1 grids all dt...")
-        page_da1_grids_all_dt(pdf)
-
-        # --- Autoresearch section: one page per experiment ---
-        for name, label in AUTO_CONFIGS:
-            print(f"Autoresearch: {label}...")
-            page_auto_da_vs_pca(pdf, name, label)
-
-        print("Autoresearch rho decay...")
-        page_auto_rho_decay(pdf)
-
-        print("Autoresearch heatmaps...")
-        page_auto_heatmaps(pdf)
-
-        print("All experiments comparison...")
-        page_auto_summary_comparison(pdf)
-
-        # --- Orthogonalized probe pages (only if data exists) ---
-        print("Raw vs orthogonalized heatmaps (circle/face)...")
-        cf_configs_orth = [
-            ("clip_cn_circle_dt0.001", "Circle dt=0.001"),
-            ("clip_cn_dps_face_dt0.001", "Face dt=0.001"),
-        ]
-        page_raw_vs_orth_heatmaps(pdf, BASE, cf_configs_orth, "Circle/Face")
-
-        print("Raw vs orthogonalized heatmaps (autoresearch)...")
-        page_raw_vs_orth_heatmaps(pdf, AUTO, AUTO_CONFIGS, "Autoresearch")
+        for label, da1, pc1, corr, scribble, prompt, all_img in experiments:
+            print(f"{label}...")
+            page_one_experiment(pdf, label, da1, pc1, corr,
+                                scribble_path=scribble, prompt=prompt)
+            page_all_images(pdf, label, all_img)
 
     print(f"\nSaved: {out_path}")
 
