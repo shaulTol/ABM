@@ -61,6 +61,8 @@ def main():
                         help="Override guidance scale for Base model")
     parser.add_argument("--base_only", action="store_true",
                         help="Only run Base model, skip Turbo")
+    parser.add_argument("--turbo_only", action="store_true",
+                        help="Only run Turbo model, skip Base")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -122,6 +124,8 @@ def main():
         models["base"]["guidance_scale"] = args.guidance_scale
     if args.base_only:
         models = {k: v for k, v in models.items() if k == "base"}
+    if args.turbo_only:
+        models = {k: v for k, v in models.items() if k == "turbo"}
 
     all_images = {}
 
