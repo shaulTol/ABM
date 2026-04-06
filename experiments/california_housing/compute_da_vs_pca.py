@@ -104,7 +104,7 @@ def main():
     device = torch.device('cpu')
     t_start = time.time()
 
-    # ── 1. Load and standardize data ──
+    # ── 1. Load, log-transform skewed features, standardize ──
     print('[1/7] Loading California Housing dataset...')
     housing = fetch_california_housing()
     X_raw = housing.data  # (20640, 8)
@@ -112,8 +112,15 @@ def main():
     N, d = X_raw.shape
     print(f'  {N} samples, {d} features')
 
+    # Log-transform positive right-skewed features
+    LOG_FEATURES = [0, 2, 3, 4, 5]  # MedInc, AveRooms, AveBedrms, Population, AveOccup
+    X_pre = X_raw.copy()
+    for i in LOG_FEATURES:
+        X_pre[:, i] = np.log1p(X_pre[:, i])  # log(1+x) to handle near-zero
+    print(f'  Log-transformed: {[FEATURE_NAMES[i] for i in LOG_FEATURES]}')
+
     scaler = StandardScaler()
-    X = scaler.fit_transform(X_raw)
+    X = scaler.fit_transform(X_pre)
     X_t = torch.tensor(X, dtype=torch.float32, device=device)
 
     # ── 2. PCA ──
@@ -129,8 +136,13 @@ def main():
     np.random.seed(42)
     # Use 2000 centers for tractable score evaluation
     center_idx = np.random.choice(N, 2000, replace=False)
-    kde = KDEScore(X_t[center_idx], bandwidth='scott', device=device, batch_size=2000)
-    print(f'  KDE: h={kde.h:.4f}, 2000 centers in {d}D')
+    # First get Scott's bandwidth, then use 2x for smoother score
+    kde_scott = KDEScore(X_t[center_idx], bandwidth='scott', device=device, batch_size=2000)
+    h_scott = kde_scott.h
+    bw_mult = 2.0
+    h_used = h_scott * bw_mult
+    kde = KDEScore(X_t[center_idx], bandwidth=h_used, device=device, batch_size=2000)
+    print(f'  KDE: h_scott={h_scott:.4f}, h_used={h_used:.4f} ({bw_mult}x Scott), 2000 centers in {d}D')
 
     # dt stability test
     print('\n  dt stability test:')
@@ -144,7 +156,7 @@ def main():
     print(f'  sigma_f^2 = {sim.var_f:.4f}')
 
     n_traj = 5000
-    checkpoints = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+    checkpoints = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]
 
     all_eigenvalues = []
     all_gap12 = []
@@ -284,7 +296,9 @@ def main():
             'optimal_gap12': float(all_gap12[opt_idx]),
             'dt': float(best_dt),
             'n_trajectories': n_traj,
-            'kde_bandwidth': float(kde.h),
+            'kde_bandwidth': float(h_used),
+            'kde_bandwidth_scott': float(h_scott),
+            'kde_bandwidth_multiplier': bw_mult,
             'kde_n_centers': 2000,
             'sigma_f_sq': float(sim.var_f),
         },
