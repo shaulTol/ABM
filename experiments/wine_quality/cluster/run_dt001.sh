@@ -2,7 +2,7 @@
 #SBATCH --job-name=wine_dt001
 #SBATCH --partition=salmon
 #SBATCH --gres=gpu:1
-#SBATCH --time=03:00:00
+#SBATCH --time=04:00:00
 #SBATCH --mem=8G
 #SBATCH --output=wine_dt001_%j.out
 #SBATCH --error=wine_dt001_%j.err
