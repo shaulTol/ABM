@@ -30,10 +30,26 @@ sys.path.insert(0, SCRIPT_DIR)
 matplotlib.rcParams.update({"font.size": 9})
 
 EXPERIMENTS = [
-    ("dps_face_dt001", "DPS Face (zeta5)", os.path.join(DATA_DIR, "dps_face_scribble.png")),
-    ("dps_first_dt001", "DPS First (seed 1)", os.path.join(DATA_DIR, "dps_first_scribble.jpeg")),
-    ("dps_second_dt001", "DPS Second (seed 2)", os.path.join(DATA_DIR, "dps_second_scribble.jpeg")),
+    # dt=0.001, T=500
+    ("dps_face_dt001", "Face dt=0.001", os.path.join(DATA_DIR, "dps_face_scribble.png")),
+    ("dps_first_dt001", "First dt=0.001", os.path.join(DATA_DIR, "dps_first_scribble.jpeg")),
+    ("dps_second_dt001", "Second dt=0.001", os.path.join(DATA_DIR, "dps_second_scribble.jpeg")),
+    # dt=0.005, T=500
+    ("dps_face_dt005", "Face dt=0.005", os.path.join(DATA_DIR, "dps_face_scribble.png")),
+    ("dps_first_dt005", "First dt=0.005", os.path.join(DATA_DIR, "dps_first_scribble.jpeg")),
+    ("dps_second_dt005", "Second dt=0.005", os.path.join(DATA_DIR, "dps_second_scribble.jpeg")),
+    # dt=0.0001, T=5000 (converged)
+    ("dps_face_converged", "Face dt=1e-4", os.path.join(DATA_DIR, "dps_face_scribble.png")),
+    ("dps_first_converged", "First dt=1e-4", os.path.join(DATA_DIR, "dps_first_scribble.jpeg")),
+    ("dps_second_converged", "Second dt=1e-4", os.path.join(DATA_DIR, "dps_second_scribble.jpeg")),
 ]
+
+# Group by dt setting for comparison pages
+DT_GROUPS = {
+    "dt=0.001": ["dps_face_dt001", "dps_first_dt001", "dps_second_dt001"],
+    "dt=0.005": ["dps_face_dt005", "dps_first_dt005", "dps_second_dt005"],
+    "dt=0.0001 (converged)": ["dps_face_converged", "dps_first_converged", "dps_second_converged"],
+}
 
 
 def embed_latents(latents_npz_path, model_id, clip_model, device, clip_batch_size=16):
@@ -270,6 +286,67 @@ def main():
         pdf.savefig(fig, dpi=150)
         plt.close(fig)
         print("  Page 4: Scribbles & DA1 grids")
+
+        # ====== Page 5: Gender histograms (3 per dt group) ======
+        for dt_label, names in DT_GROUPS.items():
+            avail = [n for n in names if os.path.exists(
+                os.path.join(rd, f"clip_da_{n}_gender_hist.png"))]
+            if not avail:
+                continue
+            ncols = len(avail)
+            fig, axes = plt.subplots(1, ncols, figsize=(5.5 * ncols, 4.5))
+            if ncols == 1:
+                axes = [axes]
+            fig.suptitle(f"Gender Distribution ({dt_label})",
+                         fontsize=13, fontweight="bold")
+            for i, name in enumerate(avail):
+                img = Image.open(os.path.join(rd, f"clip_da_{name}_gender_hist.png"))
+                axes[i].imshow(img)
+                axes[i].axis("off")
+                axes[i].set_title(name.replace("_", " "), fontsize=9)
+            fig.tight_layout(rect=[0, 0, 1, 0.93])
+            pdf.savefig(fig, dpi=150)
+            plt.close(fig)
+            print(f"  Gender histograms: {dt_label}")
+
+        # ====== Page 6: Entropy comparison table ======
+        # Collect all entropy data from JSONs
+        rows = []
+        for name, label, _ in EXPERIMENTS:
+            jdata = json_info.get(name, {})
+            if not jdata:
+                continue
+            row = {"name": label}
+            row["SSA"] = f"{jdata.get('ssa_clip', 0):.4f}"
+            row["SSA_gender"] = f"{jdata.get('ssa_gender_sliced', 0):.4f}"
+            row["H_gender"] = f"{jdata.get('gender_entropy_1d', 0):.3f}" if "gender_entropy_1d" in jdata else "—"
+            suite = jdata.get("entropy_suite", {})
+            row["H_gauss(10)"] = f"{suite.get('gaussian', {}).get('10', 0):.1f}" if suite.get("gaussian") else "—"
+            row["H_knn(10)"] = f"{suite.get('knn', {}).get('10', 0):.1f}" if suite.get("knn") else "—"
+            row["H_kde(5)"] = f"{suite.get('kde', {}).get('5', 0):.1f}" if suite.get("kde") else "—"
+            row["DA1 gap"] = f"{jdata.get('da1_gap', 0):.2f}x"
+            rows.append(row)
+
+        if rows:
+            fig, ax = plt.subplots(figsize=(14, max(3, 0.5 * len(rows) + 2)))
+            ax.axis("off")
+            cols = list(rows[0].keys())
+            cell_text = [[r[c] for c in cols] for r in rows]
+            table = ax.table(cellText=cell_text, colLabels=cols,
+                             cellLoc="center", loc="center")
+            table.auto_set_font_size(False)
+            table.set_fontsize(8)
+            table.scale(1, 1.5)
+            # Header color
+            for j in range(len(cols)):
+                table[(0, j)].set_facecolor("#4472C4")
+                table[(0, j)].set_text_props(color="white", fontweight="bold")
+            fig.suptitle("Entropy & SSA Comparison (all DPS conditions)",
+                         fontsize=13, fontweight="bold", y=0.98)
+            fig.tight_layout(rect=[0, 0, 1, 0.95])
+            pdf.savefig(fig, dpi=150)
+            plt.close(fig)
+            print("  Entropy comparison table")
 
     print(f"\nSaved: {out_path}")
 

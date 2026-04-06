@@ -53,6 +53,34 @@ from compute_sdxl_ssa_v2 import (
 )
 
 
+def pca_project(X, k):
+    """PCA-project (N, D) data to (N, k). Returns projected data and eigenvalues."""
+    mu = X.mean(axis=0)
+    Xc = X - mu
+    cov = (Xc.T @ Xc) / X.shape[0]
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    idx = eigvals.argsort()[::-1]
+    eigvals = eigvals[idx]
+    eigvecs = eigvecs[:, idx]
+    return Xc @ eigvecs[:, :k], eigvals[:k]
+
+
+def gaussian_entropy(eigvals):
+    """H_gauss = 0.5 * sum(log(2*pi*e * lambda_i))."""
+    eigvals = np.maximum(eigvals, 1e-30)
+    return 0.5 * np.sum(np.log(2 * np.pi * np.e * eigvals))
+
+
+def kde_entropy(X_proj, n_eval=5000, seed=42):
+    """KDE-based entropy via Monte Carlo on KDE samples."""
+    from scipy.stats import gaussian_kde
+    kde = gaussian_kde(X_proj.T)
+    rng = np.random.RandomState(seed)
+    samples = kde.resample(n_eval, seed=rng)
+    log_pdf = kde.logpdf(samples)
+    return float(-np.mean(log_pdf))
+
+
 def parse_args():
     p = argparse.ArgumentParser(
         description="SSA + DA in real CLIP space (768D) for SDXL"
@@ -363,6 +391,36 @@ def main():
     print(f"  SSA_full          = {results['ssa']:.6f}")
     print(f"  Ratio (sliced/full) = {ssa_gender_sliced / max(results['ssa'], 1e-12):.4f}")
 
+    # 1D gender KDE entropy
+    from scipy.stats import gaussian_kde as _gaussian_kde
+    gender_kde = _gaussian_kde(s0_gender)
+    gender_log_pdf = gender_kde.logpdf(s0_gender)
+    gender_entropy_1d = float(-np.mean(gender_log_pdf))
+    print(f"  H_gender_1d (KDE) = {gender_entropy_1d:.4f}")
+
+    # Gender histogram + KDE overlay
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        fig_gh, ax_gh = plt.subplots(figsize=(6, 4))
+        ax_gh.hist(s0_gender, bins=30, density=True, alpha=0.5, color="steelblue",
+                   edgecolor="k", linewidth=0.5, label="histogram")
+        xs = np.linspace(s0_gender.min() - 0.5, s0_gender.max() + 0.5, 200)
+        ax_gh.plot(xs, gender_kde(xs), "r-", lw=2, label="KDE")
+        ax_gh.set_xlabel("Gender score (CLIP)")
+        ax_gh.set_ylabel("Density")
+        ax_gh.set_title(f"{args.name}: Gender Distribution\nH={gender_entropy_1d:.3f}")
+        ax_gh.legend()
+        ax_gh.grid(True, alpha=0.3)
+        fig_gh.tight_layout()
+        ghist_path = os.path.join(output_dir, f"clip_da_{args.name}_gender_hist.png")
+        fig_gh.savefig(ghist_path, dpi=150)
+        plt.close(fig_gh)
+        print(f"  Saved gender histogram: {ghist_path}")
+    except Exception as e:
+        print(f"  Gender histogram failed: {e}")
+
     # =====================================================================
     # Stage 5b: Optional LC comparison
     # =====================================================================
@@ -385,13 +443,47 @@ def main():
         print(f"\n  Cross-space DA1 Spearman: rho={cross_rho:.4f} (p={cross_p:.2e})")
 
     # =====================================================================
-    # Stage 6: Entropy (optional)
+    # Stage 6: Full entropy suite (inline, no extra GPU)
     # =====================================================================
     entropy = None
+    entropy_suite = {}
     if args.compute_entropy:
-        print("\n=== Computing kNN entropy in CLIP space ===")
+        print("\n=== Computing entropy suite in CLIP PCA space ===")
+
+        # Gaussian entropy at k=5,10,20,50
+        k_pca_gauss = [5, 10, 20, 50]
+        max_k = max(k_pca_gauss)
+        _, all_eigvals = pca_project(z0_clip, max_k)
+        gauss_results = {}
+        for k in k_pca_gauss:
+            h = gaussian_entropy(all_eigvals[:k])
+            gauss_results[str(k)] = float(h)
+            print(f"  H_gauss(k={k}): {h:.4f}")
+        entropy_suite["gaussian"] = gauss_results
+
+        # kNN entropy at k_pca=5,10,20,50
+        knn_results = {}
+        for k in k_pca_gauss:
+            X_proj, _ = pca_project(z0_clip, k)
+            h = compute_knn_entropy(torch.from_numpy(X_proj), k=args.entropy_k)
+            knn_results[str(k)] = float(h)
+            print(f"  H_knn(k_pca={k}): {h:.4f}")
+        entropy_suite["knn"] = knn_results
+
+        # KDE entropy at k_pca=2,5
+        k_pca_kde = [2, 5]
+        kde_results = {}
+        for k in k_pca_kde:
+            X_proj, _ = pca_project(z0_clip, k)
+            h = kde_entropy(X_proj)
+            kde_results[str(k)] = float(h)
+            print(f"  H_kde(k_pca={k}): {h:.4f}")
+        entropy_suite["kde"] = kde_results
+
+        # Legacy: single kNN at full CLIP dim for backward compat
         entropy = compute_knn_entropy(torch.from_numpy(z0_clip), k=args.entropy_k)
-        print(f"  kNN entropy (k={args.entropy_k}): {entropy:.4f}")
+        entropy_suite["knn_full_768"] = float(entropy)
+        print(f"  H_knn(full 768D): {entropy:.4f}")
 
     # =====================================================================
     # Stage 7: Visualization
@@ -458,6 +550,8 @@ def main():
         "da2_cosines": da2_cosines,
         "ssa_gender_sliced": ssa_gender_sliced,
         "rho_sq_gender": rho_sq_gender.tolist(),
+        "gender_entropy_1d": gender_entropy_1d,
+        "entropy_suite": entropy_suite,
         "gen_time_s": gen_time,
         "langevin_time_s": langevin_time,
         "embed_time_s": embed_time,
@@ -520,8 +614,9 @@ def main():
     print(f"  Guidance: {args.guidance_scale}")
     print(f"  SSA_CLIP = {results['ssa']:.6f}")
     print(f"  SSA_gender_sliced = {ssa_gender_sliced:.6f}")
+    print(f"  H_gender_1d = {gender_entropy_1d:.4f}")
     if entropy is not None:
-        print(f"  Entropy = {entropy:.4f}")
+        print(f"  Entropy (kNN full) = {entropy:.4f}")
     print(f"  DA1: gap={results['da1_gap']:.2f}x at lag={results['da1_optimal_lag']}")
     print(f"  DA2: gap={results['da2_gap']:.2f}x at lag={results['da2_optimal_lag']}")
     print(f"  DA1 top cosine: {max(da1_cosines.items(), key=lambda x: abs(x[1]))}")
