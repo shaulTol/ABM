@@ -43,11 +43,11 @@ def embed_latents(latents_npz_path, model_id, clip_model, device, clip_batch_siz
     data = np.load(latents_npz_path)
     x0 = data["x0"]
 
-    # Load VAE
+    # Load VAE (float32 — RealCLIPEmbedder expects float)
     from diffusers import AutoencoderKL
     vae = AutoencoderKL.from_pretrained(
-        model_id, subfolder="vae", torch_dtype=torch.float16,
-    ).to(device).eval()
+        model_id, subfolder="vae",
+    ).to(device).float().eval()
 
     embedder = RealCLIPEmbedder(
         vae, clip_model_name=clip_model, device=device,
