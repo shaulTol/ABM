@@ -4,8 +4,11 @@ DA vs PCA on Wine Quality dataset (combined red + white).
 
 Demonstrates that DA finds the red/white wine separation direction
 that PCA misses, because the bimodal split isn't the max-variance axis.
+
+Usage:
+  python compute_da_vs_pca.py [--dt DT] [--bw-mult BW_MULT] [--suffix SUFFIX]
 """
-import sys, os
+import sys, os, argparse
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import numpy as np
@@ -151,8 +154,17 @@ def compute_1d_ssa(proj_1d, n_traj=5000, T_steps=500, device=None):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dt', type=float, default=None, help='Override dt (skip stability test)')
+    parser.add_argument('--bw-mult', type=float, default=1.0, help='Bandwidth multiplier on Scott')
+    parser.add_argument('--suffix', type=str, default='', help='Suffix for output files')
+    args = parser.parse_args()
+
     device = torch.device('cpu')
     t_start = time.time()
+    suffix = f'_{args.suffix}' if args.suffix else ''
+
+    print(f'=== Config: dt={args.dt}, bw_mult={args.bw_mult}, suffix="{args.suffix}" ===')
 
     # ── 1. Load data ──
     print('[1/7] Loading Wine Quality dataset...')
@@ -185,15 +197,19 @@ def main():
     center_idx = np.random.choice(N, 2000, replace=False)
     kde_scott = KDEScore(X_t[center_idx], bandwidth='scott', device=device, batch_size=2000)
     h_scott = kde_scott.h
-    bw_mult = 2.0
+    bw_mult = args.bw_mult
     h_used = h_scott * bw_mult
     kde = KDEScore(X_t[center_idx], bandwidth=h_used, device=device, batch_size=2000)
     print(f'  KDE: h_scott={h_scott:.4f}, h_used={h_used:.4f} ({bw_mult}x Scott), '
           f'2000 centers in {d}D')
 
-    print('\n  dt stability test:')
-    best_dt = dt_stability_test(kde, X_t, device)
-    print(f'  -> Using dt={best_dt}')
+    if args.dt is not None:
+        best_dt = args.dt
+        print(f'  Using specified dt={best_dt}')
+    else:
+        print('\n  dt stability test:')
+        best_dt = dt_stability_test(kde, X_t, device)
+        print(f'  -> Using dt={best_dt}')
 
     # ── 4. DA convergence profile ──
     print('\n[4/7] Computing DA convergence profile...')
@@ -202,7 +218,14 @@ def main():
     print(f'  sigma_f^2 = {sim.var_f:.4f}')
 
     n_traj = 5000
-    checkpoints = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]
+    # Physical times: 0.1, 0.2, 0.4, ..., 204.8
+    # Convert to steps based on dt
+    phys_times = [0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4, 12.8, 25.6, 51.2, 102.4, 204.8]
+    checkpoints = [max(1, int(pt / best_dt)) for pt in phys_times]
+    # Remove duplicates (can happen at large dt)
+    checkpoints = sorted(set(checkpoints))
+    print(f'  Checkpoints (steps): {checkpoints}')
+    print(f'  Physical times: {[cp * best_dt for cp in checkpoints]}')
 
     all_eigenvalues = []
     all_gap12 = []
@@ -284,9 +307,9 @@ def main():
         ax.set_ylabel('Density', fontsize=12)
         ax.legend(fontsize=11)
     plt.tight_layout()
-    fig.savefig(os.path.join(EXPDIR, 'projected_histograms.png'), dpi=150, bbox_inches='tight')
+    fig.savefig(os.path.join(EXPDIR, f'projected_histograms{suffix}.png'), dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print('  Saved projected_histograms.png')
+    print(f'  Saved projected_histograms{suffix}.png')
 
     # --- Figure 2: Loading comparison ---
     fig, ax = plt.subplots(figsize=(14, 5))
@@ -301,9 +324,9 @@ def main():
     ax.legend(fontsize=12)
     ax.axhline(0, color='gray', linewidth=0.5)
     plt.tight_layout()
-    fig.savefig(os.path.join(EXPDIR, 'loading_comparison.png'), dpi=150, bbox_inches='tight')
+    fig.savefig(os.path.join(EXPDIR, f'loading_comparison{suffix}.png'), dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print('  Saved loading_comparison.png')
+    print(f'  Saved loading_comparison{suffix}.png')
 
     # --- Figure 3: Eigenvalue gap profile ---
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -316,9 +339,9 @@ def main():
     ax.set_title('Eigenvalue Gap Profile', fontsize=14)
     ax.legend(fontsize=11)
     plt.tight_layout()
-    fig.savefig(os.path.join(EXPDIR, 'eigenvalue_gap_profile.png'), dpi=150, bbox_inches='tight')
+    fig.savefig(os.path.join(EXPDIR, f'eigenvalue_gap_profile{suffix}.png'), dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print('  Saved eigenvalue_gap_profile.png')
+    print(f'  Saved eigenvalue_gap_profile{suffix}.png')
 
     # --- Figure 4: Eigenvalue decay ---
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -330,9 +353,9 @@ def main():
     ax.set_title('Eigenvalue Decay vs Lag', fontsize=14)
     ax.legend(fontsize=11)
     plt.tight_layout()
-    fig.savefig(os.path.join(EXPDIR, 'eigenvalue_decay.png'), dpi=150, bbox_inches='tight')
+    fig.savefig(os.path.join(EXPDIR, f'eigenvalue_decay{suffix}.png'), dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print('  Saved eigenvalue_decay.png')
+    print(f'  Saved eigenvalue_decay{suffix}.png')
 
     # ── Save results JSON ──
     results = {
@@ -379,9 +402,9 @@ def main():
         'elapsed_seconds': time.time() - t_start,
     }
 
-    with open(os.path.join(EXPDIR, 'results.json'), 'w') as f:
+    with open(os.path.join(EXPDIR, f'results{suffix}.json'), 'w') as f:
         json.dump(results, f, indent=2)
-    print('  Saved results.json')
+    print(f'  Saved results{suffix}.json')
 
     # ── Summary ──
     print('\n' + '='*60)
