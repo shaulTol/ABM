@@ -149,143 +149,138 @@ def main():
     print(f"\n=== Generating scatter plots ===")
     from PIL import Image
 
+    # Build name→label lookup
+    exp_lookup = {name: label for name, label, _ in EXPERIMENTS}
+    exp_scribble = {name: scr for name, _, scr in EXPERIMENTS}
+
     with PdfPages(out_path) as pdf:
-        # ====== Page 1: PC1 vs PC2 (3 experiments side by side) ======
-        fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-        fig.suptitle("CLIP Space: PC1 vs PC2 (colored by gender score)",
-                      fontsize=13, fontweight="bold")
+        from scipy.stats import spearmanr
 
-        for i, (name, label, scribble) in enumerate(EXPERIMENTS):
-            ax = axes[i]
-            if name not in embeddings:
-                ax.text(0.5, 0.5, "No data", ha="center", va="center",
-                        transform=ax.transAxes)
-                ax.set_title(label)
+        # ====== Pages 1-3 per dt group: PC1 vs PC2 ======
+        for dt_label, names in DT_GROUPS.items():
+            avail = [n for n in names if n in embeddings]
+            if not avail:
                 continue
+            ncols = len(avail)
+            fig, axes = plt.subplots(1, ncols, figsize=(5.5 * ncols, 5))
+            if ncols == 1:
+                axes = [axes]
+            fig.suptitle(f"PC1 vs PC2 — {dt_label} (colored by gender)",
+                         fontsize=13, fontweight="bold")
+            for i, name in enumerate(avail):
+                ax = axes[i]
+                z0 = embeddings[name]
+                scores_pca, eigvecs, mu, eigvals = pca_project(z0, k=2)
+                gender_scores = z0 @ gender_axis
+                sc = ax.scatter(scores_pca[:, 0], scores_pca[:, 1],
+                               c=gender_scores, cmap="RdBu_r", s=15, alpha=0.7,
+                               edgecolors="k", linewidths=0.3)
+                plt.colorbar(sc, ax=ax, label="gender score", shrink=0.8)
+                ssa = json_info.get(name, {}).get("ssa_clip", "?")
+                ssa_g = json_info.get(name, {}).get("ssa_gender_sliced", "?")
+                ax.set_xlabel(f"PC1 ({eigvals[0]:.2f})")
+                ax.set_ylabel(f"PC2 ({eigvals[1]:.2f})")
+                ax.set_title(f"{exp_lookup[name]}\nSSA={ssa:.4f}, sliced={ssa_g:.4f}", fontsize=9)
+                ax.grid(True, alpha=0.3)
+            fig.tight_layout(rect=[0, 0, 1, 0.93])
+            pdf.savefig(fig, dpi=150)
+            plt.close(fig)
+            print(f"  PC1 vs PC2: {dt_label}")
 
-            z0 = embeddings[name]
-            scores_pca, eigvecs, mu, eigvals = pca_project(z0, k=2)
-            gender_scores = z0 @ gender_axis
-
-            sc = ax.scatter(scores_pca[:, 0], scores_pca[:, 1],
-                           c=gender_scores, cmap="RdBu_r", s=15, alpha=0.7,
-                           edgecolors="k", linewidths=0.3)
-            plt.colorbar(sc, ax=ax, label="gender score", shrink=0.8)
-
-            # Annotate with SSA
-            ssa = json_info.get(name, {}).get("ssa_clip", "?")
-            ssa_g = json_info.get(name, {}).get("ssa_gender_sliced", "?")
-            ax.set_xlabel(f"PC1 ({eigvals[0]:.2f})")
-            ax.set_ylabel(f"PC2 ({eigvals[1]:.2f})")
-            ax.set_title(f"{label}\nSSA={ssa:.4f}, sliced={ssa_g:.4f}", fontsize=9)
-            ax.grid(True, alpha=0.3)
-
-        fig.tight_layout(rect=[0, 0, 1, 0.93])
-        pdf.savefig(fig, dpi=150)
-        plt.close(fig)
-        print("  Page 1: PC1 vs PC2")
-
-        # ====== Page 2: PC1 vs Gender (3 experiments side by side) ======
-        fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-        fig.suptitle("CLIP Space: PC1 vs Gender Direction (colored by gender score)",
-                      fontsize=13, fontweight="bold")
-
-        for i, (name, label, scribble) in enumerate(EXPERIMENTS):
-            ax = axes[i]
-            if name not in embeddings:
-                ax.text(0.5, 0.5, "No data", ha="center", va="center",
-                        transform=ax.transAxes)
-                ax.set_title(label)
+        # ====== Pages 4-6 per dt group: PC1 vs Gender ======
+        for dt_label, names in DT_GROUPS.items():
+            avail = [n for n in names if n in embeddings]
+            if not avail:
                 continue
+            ncols = len(avail)
+            fig, axes = plt.subplots(1, ncols, figsize=(5.5 * ncols, 5))
+            if ncols == 1:
+                axes = [axes]
+            fig.suptitle(f"PC1 vs Gender — {dt_label}",
+                         fontsize=13, fontweight="bold")
+            for i, name in enumerate(avail):
+                ax = axes[i]
+                z0 = embeddings[name]
+                scores_pca, _, _, eigvals = pca_project(z0, k=2)
+                gender_scores = z0 @ gender_axis
+                sc = ax.scatter(scores_pca[:, 0], gender_scores,
+                               c=gender_scores, cmap="RdBu_r", s=15, alpha=0.7,
+                               edgecolors="k", linewidths=0.3)
+                plt.colorbar(sc, ax=ax, label="gender score", shrink=0.8)
+                rho, _ = spearmanr(scores_pca[:, 0], gender_scores)
+                ax.set_xlabel(f"PC1 ({eigvals[0]:.2f})")
+                ax.set_ylabel("Gender direction")
+                ax.set_title(f"{exp_lookup[name]}\nPC1-gender ρ={rho:.3f}", fontsize=9)
+                ax.grid(True, alpha=0.3)
+            fig.tight_layout(rect=[0, 0, 1, 0.93])
+            pdf.savefig(fig, dpi=150)
+            plt.close(fig)
+            print(f"  PC1 vs Gender: {dt_label}")
 
-            z0 = embeddings[name]
-            scores_pca, eigvecs, mu, eigvals = pca_project(z0, k=2)
-            gender_scores = z0 @ gender_axis
-
-            sc = ax.scatter(scores_pca[:, 0], gender_scores,
-                           c=gender_scores, cmap="RdBu_r", s=15, alpha=0.7,
-                           edgecolors="k", linewidths=0.3)
-            plt.colorbar(sc, ax=ax, label="gender score", shrink=0.8)
-
-            # Correlation
-            from scipy.stats import spearmanr
-            rho, pval = spearmanr(scores_pca[:, 0], gender_scores)
-
-            ssa = json_info.get(name, {}).get("ssa_clip", "?")
-            ax.set_xlabel(f"PC1 ({eigvals[0]:.2f})")
-            ax.set_ylabel("Gender direction")
-            ax.set_title(f"{label}\nPC1-gender ρ={rho:.3f}", fontsize=9)
-            ax.grid(True, alpha=0.3)
-
-        fig.tight_layout(rect=[0, 0, 1, 0.93])
-        pdf.savefig(fig, dpi=150)
-        plt.close(fig)
-        print("  Page 2: PC1 vs Gender")
-
-        # ====== Page 3: DA1 vs Gender (3 experiments side by side) ======
-        fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-        fig.suptitle("CLIP Space: DA1 vs Gender Direction",
-                      fontsize=13, fontweight="bold")
-
-        for i, (name, label, scribble) in enumerate(EXPERIMENTS):
-            ax = axes[i]
-            if name not in embeddings or name not in da_info:
-                ax.text(0.5, 0.5, "No data", ha="center", va="center",
-                        transform=ax.transAxes)
-                ax.set_title(label)
+        # ====== Pages 7-9 per dt group: DA1 vs Gender ======
+        for dt_label, names in DT_GROUPS.items():
+            avail = [n for n in names if n in embeddings and n in da_info]
+            if not avail:
                 continue
+            ncols = len(avail)
+            fig, axes = plt.subplots(1, ncols, figsize=(5.5 * ncols, 5))
+            if ncols == 1:
+                axes = [axes]
+            fig.suptitle(f"DA1 vs Gender — {dt_label}",
+                         fontsize=13, fontweight="bold")
+            for i, name in enumerate(avail):
+                ax = axes[i]
+                z0 = embeddings[name]
+                da = da_info[name]
+                da1_scores = (z0 - da["mu"]) @ da["da1_eigvec"]
+                gender_scores = z0 @ gender_axis
+                sc = ax.scatter(da1_scores, gender_scores,
+                               c=gender_scores, cmap="RdBu_r", s=15, alpha=0.7,
+                               edgecolors="k", linewidths=0.3)
+                plt.colorbar(sc, ax=ax, label="gender score", shrink=0.8)
+                rho, _ = spearmanr(da1_scores, gender_scores)
+                ax.set_xlabel("DA1 score")
+                ax.set_ylabel("Gender direction")
+                ax.set_title(f"{exp_lookup[name]}\nDA1-gender ρ={rho:.3f}", fontsize=9)
+                ax.grid(True, alpha=0.3)
+            fig.tight_layout(rect=[0, 0, 1, 0.93])
+            pdf.savefig(fig, dpi=150)
+            plt.close(fig)
+            print(f"  DA1 vs Gender: {dt_label}")
 
-            z0 = embeddings[name]
-            da = da_info[name]
-            da1_scores = (z0 - da["mu"]) @ da["da1_eigvec"]
-            gender_scores = z0 @ gender_axis
-
-            sc = ax.scatter(da1_scores, gender_scores,
-                           c=gender_scores, cmap="RdBu_r", s=15, alpha=0.7,
-                           edgecolors="k", linewidths=0.3)
-            plt.colorbar(sc, ax=ax, label="gender score", shrink=0.8)
-
-            rho, pval = spearmanr(da1_scores, gender_scores)
-            ax.set_xlabel("DA1 score")
-            ax.set_ylabel("Gender direction")
-            ax.set_title(f"{label}\nDA1-gender ρ={rho:.3f}", fontsize=9)
-            ax.grid(True, alpha=0.3)
-
-        fig.tight_layout(rect=[0, 0, 1, 0.93])
-        pdf.savefig(fig, dpi=150)
-        plt.close(fig)
-        print("  Page 3: DA1 vs Gender")
-
-        # ====== Page 4: Scribble images + DA1 grids ======
-        fig, axes = plt.subplots(3, 2, figsize=(14, 14))
-        fig.suptitle("Scribble Inputs & DA1-Sorted Grids",
-                      fontsize=13, fontweight="bold")
-
-        for row, (name, label, scribble) in enumerate(EXPERIMENTS):
-            # Scribble
-            ax = axes[row, 0]
-            if os.path.exists(scribble):
-                img = Image.open(scribble)
-                ax.imshow(img)
-            ax.set_title(f"{label}\nScribble", fontsize=9)
-            ax.axis("off")
-
-            # DA1 grid
-            ax = axes[row, 1]
-            grid_path = os.path.join(rd, f"clip_da_{name}_da1_grid.png")
-            if os.path.exists(grid_path):
-                img = Image.open(grid_path)
-                ax.imshow(img)
-            else:
-                ax.text(0.5, 0.5, "Grid not found", ha="center", va="center",
-                        transform=ax.transAxes)
-            ax.set_title("DA1-sorted grid", fontsize=9)
-            ax.axis("off")
-
-        fig.tight_layout(rect=[0, 0, 1, 0.95])
-        pdf.savefig(fig, dpi=150)
-        plt.close(fig)
-        print("  Page 4: Scribbles & DA1 grids")
+        # ====== Scribble + DA1 grids per dt group ======
+        for dt_label, names in DT_GROUPS.items():
+            avail = [n for n in names if n in embeddings]
+            if not avail:
+                continue
+            nrows = len(avail)
+            fig, axes = plt.subplots(nrows, 2, figsize=(14, 4.5 * nrows))
+            if nrows == 1:
+                axes = axes.reshape(1, -1)
+            fig.suptitle(f"Scribbles & DA1 Grids — {dt_label}",
+                         fontsize=13, fontweight="bold")
+            for row, name in enumerate(avail):
+                scribble = exp_scribble[name]
+                ax = axes[row, 0]
+                if os.path.exists(scribble):
+                    img = Image.open(scribble)
+                    ax.imshow(img)
+                ax.set_title(f"{exp_lookup[name]}\nScribble", fontsize=9)
+                ax.axis("off")
+                ax = axes[row, 1]
+                grid_path = os.path.join(rd, f"clip_da_{name}_da1_grid.png")
+                if os.path.exists(grid_path):
+                    img = Image.open(grid_path)
+                    ax.imshow(img)
+                else:
+                    ax.text(0.5, 0.5, "Grid not found", ha="center",
+                            va="center", transform=ax.transAxes)
+                ax.set_title("DA1-sorted grid", fontsize=9)
+                ax.axis("off")
+            fig.tight_layout(rect=[0, 0, 1, 0.95])
+            pdf.savefig(fig, dpi=150)
+            plt.close(fig)
+            print(f"  Scribbles & DA1 grids: {dt_label}")
 
         # ====== Page 5: Gender histograms (3 per dt group) ======
         for dt_label, names in DT_GROUPS.items():
