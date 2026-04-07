@@ -30,6 +30,7 @@ DEFAULT_PROBE_PAIRS = [
     ("framing", "a close-up portrait", "a wide-angle photograph"),
     ("complexity", "a simple image", "a complex detailed image"),
     ("expression", "a smiling person", "a serious person"),
+    ("glasses", "an animal wearing sunglasses", "an animal without sunglasses"),
 ]
 
 
@@ -142,7 +143,8 @@ class RealCLIPEmbedder:
 # compute_ssa_da — Space-agnostic SSA + DA computation
 # ---------------------------------------------------------------------------
 
-def compute_ssa_da(z0, z_snapshots, lags, n_eigvals=10, n_eigvecs=3):
+def compute_ssa_da(z0, z_snapshots, lags, n_eigvals=10, n_eigvecs=3,
+                   ssa_min_lag=0, ssa_only=False):
     """Compute SSA and DA from pre-computed embeddings (any dimension).
 
     Args:
@@ -151,10 +153,13 @@ def compute_ssa_da(z0, z_snapshots, lags, n_eigvals=10, n_eigvecs=3):
         lags: sorted list of lag values
         n_eigvals: number of top eigenvalues to keep per lag
         n_eigvecs: number of top eigenvectors to keep per lag
+        ssa_min_lag: only include lags >= this value when computing SSA mean
+        ssa_only: if True, skip DA eigendecomposition (only compute SSA)
 
     Returns:
         dict with: mu, C0_trace, rho_sq (array), ssa (scalar),
         eigenvalues/eigenvectors per lag, gap profiles, DA1/DA2 optimal info
+        (DA fields are None when ssa_only=True)
     """
     N, D = z0.shape
     mu = z0.mean(axis=0)
@@ -173,9 +178,9 @@ def compute_ssa_da(z0, z_snapshots, lags, n_eigvals=10, n_eigvecs=3):
     gap23_list = []
     top_eigvecs_list = []
 
-    for lag in lags:
-        if lag not in z_snapshots:
-            continue
+    used_lags = [l for l in lags if l in z_snapshots]
+
+    for lag in used_lags:
         z_tau = z_snapshots[lag]
         z_tau_c = z_tau - mu
 
@@ -184,60 +189,81 @@ def compute_ssa_da(z0, z_snapshots, lags, n_eigvals=10, n_eigvecs=3):
         rho = tr_c_tau / tr_c0
         rho_sq_list.append(rho ** 2)
 
-        # Full C(tau) for DA eigdecomp
-        z0_t = torch.from_numpy(z0_c).float()
-        z_tau_t = torch.from_numpy(z_tau_c).float()
-        C_tau = (z_tau_t.T @ z0_t) / N
-        C_tau = 0.5 * (C_tau + C_tau.T)
+        if not ssa_only:
+            # Full C(tau) for DA eigdecomp
+            z0_t = torch.from_numpy(z0_c).float()
+            z_tau_t = torch.from_numpy(z_tau_c).float()
+            C_tau = (z_tau_t.T @ z0_t) / N
+            C_tau = 0.5 * (C_tau + C_tau.T)
 
-        eigvals, eigvecs = torch.linalg.eigh(C_tau)
-        idx = eigvals.abs().argsort(descending=True)
-        eigvals = eigvals[idx].numpy()
-        eigvecs = eigvecs[:, idx].numpy()
+            eigvals, eigvecs = torch.linalg.eigh(C_tau)
+            idx = eigvals.abs().argsort(descending=True)
+            eigvals = eigvals[idx].numpy()
+            eigvecs = eigvecs[:, idx].numpy()
 
-        eigenvalues_list.append(eigvals[:n_eigvals])
-        top_eigvecs_list.append(eigvecs[:, :n_eigvecs])
+            eigenvalues_list.append(eigvals[:n_eigvals])
+            top_eigvecs_list.append(eigvecs[:, :n_eigvecs])
 
-        abs_eig = np.abs(eigvals)
-        g12 = abs_eig[0] / max(abs_eig[1], 1e-12)
-        g23 = abs_eig[1] / max(abs_eig[2], 1e-12)
-        gap12_list.append(g12)
-        gap23_list.append(g23)
+            abs_eig = np.abs(eigvals)
+            g12 = abs_eig[0] / max(abs_eig[1], 1e-12)
+            g23 = abs_eig[1] / max(abs_eig[2], 1e-12)
+            gap12_list.append(g12)
+            gap23_list.append(g23)
 
     rho_sq = np.array(rho_sq_list)
-    ssa = float(np.mean(rho_sq))
-    gap12 = np.array(gap12_list)
-    gap23 = np.array(gap23_list)
 
-    used_lags = [l for l in lags if l in z_snapshots]
-
-    opt1_idx = int(np.argmax(gap12))
-    opt2_idx = int(np.argmax(gap23))
+    # SSA: optionally filter by ssa_min_lag
+    used_lags_arr = np.array(used_lags)
+    mask = used_lags_arr >= ssa_min_lag
+    if mask.any():
+        ssa = float(np.mean(rho_sq[mask]))
+    else:
+        ssa = float(np.mean(rho_sq))
+    ssa_all = float(np.mean(rho_sq))  # unfiltered for reference
 
     result = {
         "ssa": ssa,
+        "ssa_all": ssa_all,
+        "ssa_min_lag": ssa_min_lag,
         "rho_sq": rho_sq,
         "snapshot_lags": used_lags,
-        "eigenvalues": eigenvalues_list,
-        "gap12": gap12,
-        "gap23": gap23,
-        "top_eigvecs": top_eigvecs_list,
         "mu": mu,
         "C0_trace": float(tr_c0),
         "embed_dim": D,
-        # DA1
-        "da1_optimal_lag": used_lags[opt1_idx],
-        "da1_gap": float(gap12[opt1_idx]),
-        "da1_eigvec": top_eigvecs_list[opt1_idx][:, 0],
-        # DA2
-        "da2_optimal_lag": used_lags[opt2_idx],
-        "da2_gap": float(gap23[opt2_idx]),
-        "da2_eigvec": top_eigvecs_list[opt2_idx][:, 1],
     }
 
-    print(f"  SSA = {ssa:.6f}")
-    print(f"  DA1: gap={gap12[opt1_idx]:.2f}x at lag={used_lags[opt1_idx]}")
-    print(f"  DA2: gap={gap23[opt2_idx]:.2f}x at lag={used_lags[opt2_idx]}")
+    print(f"  SSA = {ssa:.6f}" + (f" (lags >= {ssa_min_lag})" if ssa_min_lag > 0 else ""))
+    if ssa_min_lag > 0:
+        print(f"  SSA_all = {ssa_all:.6f} (all lags)")
+
+    if ssa_only:
+        # Fill DA fields with None
+        result.update({
+            "eigenvalues": None, "gap12": None, "gap23": None,
+            "top_eigvecs": None,
+            "da1_optimal_lag": None, "da1_gap": None, "da1_eigvec": None,
+            "da2_optimal_lag": None, "da2_gap": None, "da2_eigvec": None,
+        })
+    else:
+        gap12 = np.array(gap12_list)
+        gap23 = np.array(gap23_list)
+        opt1_idx = int(np.argmax(gap12))
+        opt2_idx = int(np.argmax(gap23))
+
+        result.update({
+            "eigenvalues": eigenvalues_list,
+            "gap12": gap12,
+            "gap23": gap23,
+            "top_eigvecs": top_eigvecs_list,
+            "da1_optimal_lag": used_lags[opt1_idx],
+            "da1_gap": float(gap12[opt1_idx]),
+            "da1_eigvec": top_eigvecs_list[opt1_idx][:, 0],
+            "da2_optimal_lag": used_lags[opt2_idx],
+            "da2_gap": float(gap23[opt2_idx]),
+            "da2_eigvec": top_eigvecs_list[opt2_idx][:, 1],
+        })
+        print(f"  DA1: gap={gap12[opt1_idx]:.2f}x at lag={used_lags[opt1_idx]}")
+        print(f"  DA2: gap={gap23[opt2_idx]:.2f}x at lag={used_lags[opt2_idx]}")
 
     return result
 
