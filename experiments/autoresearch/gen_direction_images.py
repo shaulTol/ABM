@@ -78,8 +78,8 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     clip_model, preprocess, tokenizer = load_clip_model(device)
 
-    emb_a = clip_encode_images(images_a, clip_model, preprocess, device)  # (N, D)
-    emb_b = clip_encode_images(images_b, clip_model, preprocess, device)  # (N, D)
+    emb_a = clip_encode_images(clip_model, preprocess, images_a, device)  # (N, D)
+    emb_b = clip_encode_images(clip_model, preprocess, images_b, device)  # (N, D)
 
     mean_a = emb_a.mean(axis=0)
     mean_b = emb_b.mean(axis=0)
