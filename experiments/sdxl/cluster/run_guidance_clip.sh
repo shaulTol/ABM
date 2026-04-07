@@ -2,10 +2,10 @@
 #SBATCH --job-name=gs_clip
 #SBATCH --partition=salmon
 #SBATCH --gres=gpu:1
-#SBATCH --time=03:00:00
+#SBATCH --time=08:00:00
 #SBATCH --mem=48G
 #SBATCH --cpus-per-task=4
-#SBATCH --array=0-1
+#SBATCH --array=1
 #SBATCH --output=results_clip_da/guidance_gs_%a_%j.out
 #SBATCH --error=results_clip_da/guidance_gs_%a_%j.err
 
