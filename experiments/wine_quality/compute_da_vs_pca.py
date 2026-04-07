@@ -168,20 +168,39 @@ def main():
 
     # ── 1. Load data ──
     print('[1/7] Loading Wine Quality dataset...')
-    X_raw, labels = download_data()
-    N, d = X_raw.shape
+    X_raw_all, labels_all = download_data()
+    n_red_total = (labels_all == 0).sum()
+    n_white_total = (labels_all == 1).sum()
+    d = X_raw_all.shape[1]
+    print(f'  Raw: {len(X_raw_all)} samples ({n_red_total} red, {n_white_total} white), {d} features')
+
+    # Balance: subsample whites to match reds
+    np.random.seed(42)
+    red_idx = np.where(labels_all == 0)[0]
+    white_idx = np.random.choice(np.where(labels_all == 1)[0], n_red_total, replace=False)
+    balanced_idx = np.concatenate([red_idx, white_idx])
+    np.random.shuffle(balanced_idx)
+    X_raw = X_raw_all[balanced_idx]
+    labels = labels_all[balanced_idx]
+    N = len(X_raw)
     n_red = (labels == 0).sum()
     n_white = (labels == 1).sum()
-    print(f'  Combined: {N} samples ({n_red} red, {n_white} white), {d} features')
+    print(f'  Balanced: {N} samples ({n_red} red, {n_white} white)')
 
     scaler = StandardScaler()
     X = scaler.fit_transform(X_raw)
     X_t = torch.tensor(X, dtype=torch.float32, device=device)
 
+    # Also standardize the FULL dataset for projections/histograms
+    X_full = scaler.transform(X_raw_all)
+    labels_full = labels_all
+    is_red_full = labels_full == 0
+    is_white_full = labels_full == 1
+
     is_red = labels == 0
     is_white = labels == 1
 
-    # ── 2. PCA ──
+    # ── 2. PCA (on balanced data) ──
     print('\n[2/7] Computing PCA...')
     pca = PCA(n_components=d)
     pca.fit(X)
@@ -191,17 +210,15 @@ def main():
     for i, name in enumerate(FEATURE_NAMES):
         print(f'    {name:20s}: {pc1[i]:+.3f}')
 
-    # ── 3. Build KDE scorer ──
+    # ── 3. Build KDE scorer (ALL balanced samples as centers) ──
     print('\n[3/7] Building KDE scorer...')
-    np.random.seed(42)
-    center_idx = np.random.choice(N, 2000, replace=False)
-    kde_scott = KDEScore(X_t[center_idx], bandwidth='scott', device=device, batch_size=2000)
+    kde_scott = KDEScore(X_t, bandwidth='scott', device=device, batch_size=2000)
     h_scott = kde_scott.h
     bw_mult = args.bw_mult
     h_used = h_scott * bw_mult
-    kde = KDEScore(X_t[center_idx], bandwidth=h_used, device=device, batch_size=2000)
+    kde = KDEScore(X_t, bandwidth=h_used, device=device, batch_size=2000)
     print(f'  KDE: h_scott={h_scott:.4f}, h_used={h_used:.4f} ({bw_mult}x Scott), '
-          f'2000 centers in {d}D')
+          f'{N} centers (all balanced samples) in {d}D')
 
     if args.dt is not None:
         best_dt = args.dt
@@ -217,7 +234,8 @@ def main():
         score_fn=kde.score, samples=X_t, dt=best_dt, device=device)
     print(f'  sigma_f^2 = {sim.var_f:.4f}')
 
-    n_traj = 5000
+    # Use all balanced samples as trajectory starting points
+    n_traj = N  # 3198
     # Physical times: 0.1, 0.2, 0.4, ..., up to 102.4
     # Convert to steps based on dt
     phys_times = [0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4, 12.8, 25.6, 51.2, 102.4]
@@ -259,12 +277,13 @@ def main():
     cos_sim = abs(np.dot(pc1, da1))
     print(f'  |cos(PC1, DA1)| = {cos_sim:.4f}')
 
-    proj_pc1 = X @ pc1
-    proj_da1 = X @ da1
+    # Project FULL dataset for histograms/validation
+    proj_pc1 = X_full @ pc1
+    proj_da1 = X_full @ da1
 
-    # Point-biserial correlation with red/white
-    r_pc1_label, p_pc1 = pointbiserialr(labels, proj_pc1)
-    r_da1_label, p_da1 = pointbiserialr(labels, proj_da1)
+    # Point-biserial correlation with red/white (on full dataset)
+    r_pc1_label, p_pc1 = pointbiserialr(labels_full, proj_pc1)
+    r_da1_label, p_da1 = pointbiserialr(labels_full, proj_da1)
     print(f'  Point-biserial r(PC1, red/white) = {r_pc1_label:.4f} (p={p_pc1:.2e})')
     print(f'  Point-biserial r(DA1, red/white) = {r_da1_label:.4f} (p={p_da1:.2e})')
 
@@ -283,11 +302,11 @@ def main():
     # ── 6. SSA comparison ──
     print('\n[6/7] Computing SSA on 1D projections...')
     t0 = time.time()
-    ssa_pc1, rho_pc1 = compute_1d_ssa(proj_pc1, n_traj=5000, T_steps=500, device=device)
+    ssa_pc1, rho_pc1 = compute_1d_ssa(proj_pc1, n_traj=3198, T_steps=500, device=device)
     print(f'  SSA(PC1 projection) = {ssa_pc1:.4f} [{time.time()-t0:.1f}s]')
 
     t0 = time.time()
-    ssa_da1, rho_da1 = compute_1d_ssa(proj_da1, n_traj=5000, T_steps=500, device=device)
+    ssa_da1, rho_da1 = compute_1d_ssa(proj_da1, n_traj=3198, T_steps=500, device=device)
     print(f'  SSA(DA1 projection) = {ssa_da1:.4f} [{time.time()-t0:.1f}s]')
 
     # ── 7. Figures ──
@@ -299,8 +318,8 @@ def main():
         (axes[0], proj_pc1, 'PC1', ssa_pc1, r_pc1_label),
         (axes[1], proj_da1, 'DA1', ssa_da1, r_da1_label),
     ]:
-        ax.hist(proj[is_red], bins=60, alpha=0.6, label='Red wine', color='firebrick', density=True)
-        ax.hist(proj[is_white], bins=60, alpha=0.6, label='White wine', color='gold', density=True)
+        ax.hist(proj[is_red_full], bins=60, alpha=0.6, label='Red wine', color='firebrick', density=True)
+        ax.hist(proj[is_white_full], bins=60, alpha=0.6, label='White wine', color='gold', density=True)
         ax.set_title(f'Projection onto {label}  (SSA={ssa_val:.4f}, r_pb={abs(rpb):.3f})',
                      fontsize=14)
         ax.set_xlabel(f'{label} projection', fontsize=12)
@@ -359,8 +378,9 @@ def main():
 
     # ── Save results JSON ──
     results = {
-        'dataset': 'wine_quality_combined',
-        'n_samples': int(N),
+        'dataset': 'wine_quality_balanced',
+        'n_samples_balanced': int(N),
+        'n_samples_full': int(len(X_full)),
         'n_red': int(n_red),
         'n_white': int(n_white),
         'n_features': int(d),
@@ -378,7 +398,7 @@ def main():
             'kde_bandwidth': float(h_used),
             'kde_bandwidth_scott': float(h_scott),
             'kde_bandwidth_multiplier': bw_mult,
-            'kde_n_centers': 2000,
+            'kde_n_centers': int(N),
             'sigma_f_sq': float(sim.var_f),
         },
         'comparison': {
