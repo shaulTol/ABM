@@ -160,6 +160,10 @@ def main():
     parser.add_argument('--suffix', type=str, default='', help='Suffix for output files')
     parser.add_argument('--log-transform', action='store_true',
                         help='Log-transform skewed features before standardizing')
+    parser.add_argument('--clip-da1', type=float, default=None,
+                        help='Remove samples with |DA1 projection| > threshold (uses DA1 from --clip-da1-ref)')
+    parser.add_argument('--clip-da1-ref', type=str, default=None,
+                        help='Path to results JSON with DA1 loadings for clipping')
     args = parser.parse_args()
 
     device = torch.device('cpu')
@@ -200,6 +204,26 @@ def main():
             X_raw[:, i] = np.log1p(X_raw[:, i])
             X_raw_all[:, i] = np.log1p(X_raw_all[:, i])
         print(f'  Log-transformed: {[FEATURE_NAMES[i] for i in LOG_FEATURES]}')
+
+    # Remove DA1 outliers if requested
+    if args.clip_da1 is not None:
+        ref_path = args.clip_da1_ref or os.path.join(EXPDIR, 'results_balanced.json')
+        with open(ref_path) as f:
+            ref = json.load(f)
+        da1_ref = np.array(ref['da']['da1_loadings'])
+        # Standardize with current data to project
+        scaler_tmp = StandardScaler()
+        X_tmp = scaler_tmp.fit_transform(X_raw)
+        proj_tmp = X_tmp @ da1_ref
+        mask = np.abs(proj_tmp) <= args.clip_da1
+        n_removed = (~mask).sum()
+        X_raw = X_raw[mask]
+        labels = labels[mask]
+        N = len(X_raw)
+        n_red = (labels == 0).sum()
+        n_white = (labels == 1).sum()
+        print(f'  Clipped DA1 outliers > {args.clip_da1}: removed {n_removed}, '
+              f'remaining {N} ({n_red} red, {n_white} white)')
 
     scaler = StandardScaler()
     X = scaler.fit_transform(X_raw)
