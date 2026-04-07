@@ -76,7 +76,7 @@ def main():
     # CLIP encode
     print("Computing CLIP embeddings...")
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    clip_model, preprocess, tokenizer = load_clip_model(device)
+    clip_model, tokenizer, preprocess = load_clip_model(device)
 
     emb_a = clip_encode_images(clip_model, preprocess, images_a, device)  # (N, D)
     emb_b = clip_encode_images(clip_model, preprocess, images_b, device)  # (N, D)
