@@ -26,19 +26,32 @@ def main():
     parser.add_argument("--n_images", type=int, default=50,
                         help="Number of images per prompt")
     parser.add_argument("--output_dir", type=str, default="results_direction")
+    parser.add_argument("--use_base", action="store_true",
+                        help="Use SDXL Base instead of Turbo")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
     os.makedirs(f"{args.output_dir}/group_a", exist_ok=True)
     os.makedirs(f"{args.output_dir}/group_b", exist_ok=True)
 
-    # Load Turbo pipeline
     from diffusers import AutoPipelineForText2Image
-    pipe = AutoPipelineForText2Image.from_pretrained(
-        "stabilityai/sdxl-turbo",
-        torch_dtype=torch.float16,
-        variant="fp16",
-    ).to("cuda")
+    if args.use_base:
+        print("Using SDXL Base (50 steps, gs=7.5, 1024x1024)")
+        pipe = AutoPipelineForText2Image.from_pretrained(
+            "stabilityai/stable-diffusion-xl-base-1.0",
+            torch_dtype=torch.float16,
+            variant="fp16",
+        ).to("cuda")
+        gen_kwargs = dict(num_inference_steps=50, guidance_scale=7.5,
+                          original_size=(1024, 1024), target_size=(1024, 1024))
+    else:
+        print("Using SDXL Turbo (4 steps, gs=0.0, 512x512)")
+        pipe = AutoPipelineForText2Image.from_pretrained(
+            "stabilityai/sdxl-turbo",
+            torch_dtype=torch.float16,
+            variant="fp16",
+        ).to("cuda")
+        gen_kwargs = dict(num_inference_steps=4, guidance_scale=0.0)
 
     # Generate group A
     print(f"Generating {args.n_images} images for prompt A: {args.prompt_a}")
@@ -46,9 +59,8 @@ def main():
     for i in range(args.n_images):
         img = pipe(
             prompt=args.prompt_a,
-            num_inference_steps=4,
-            guidance_scale=0.0,
             generator=torch.Generator("cuda").manual_seed(i),
+            **gen_kwargs,
         ).images[0]
         img.save(f"{args.output_dir}/group_a/img_{i:03d}.png")
         images_a.append(img)
@@ -61,9 +73,8 @@ def main():
     for i in range(args.n_images):
         img = pipe(
             prompt=args.prompt_b,
-            num_inference_steps=4,
-            guidance_scale=0.0,
             generator=torch.Generator("cuda").manual_seed(i),
+            **gen_kwargs,
         ).images[0]
         img.save(f"{args.output_dir}/group_b/img_{i:03d}.png")
         images_b.append(img)
