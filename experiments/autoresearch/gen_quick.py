@@ -31,6 +31,28 @@ def make_frame_scribble_v2(size=1024, margin=250, lw=12, blur=12):
     return img.filter(ImageFilter.GaussianBlur(blur))
 
 
+def make_room_scribble(size=1024, blur=6):
+    """Room scene with wall, painting frame, floor, and shelf."""
+    img = Image.new("RGB", (size, size), "black")
+    d = ImageDraw.Draw(img)
+    # Floor line
+    floor_y = 700
+    d.line([0, floor_y, size, floor_y], fill="white", width=4)
+    # Wall panel lines
+    for x in [200, 500, 800]:
+        d.line([x, 0, x, floor_y], fill="gray", width=2)
+    # Frame on wall
+    fl, ft, fr, fb = 300, 150, 724, 500
+    d.rectangle([fl, ft, fr, fb], outline="white", width=10)
+    d.rectangle([fl + 15, ft + 15, fr - 15, fb - 15], outline="white", width=3)
+    # Shelf below frame
+    shelf_y = 550
+    d.line([350, shelf_y, 674, shelf_y], fill="white", width=4)
+    d.line([370, shelf_y, 370, floor_y], fill="gray", width=3)
+    d.line([654, shelf_y, 654, floor_y], fill="gray", width=3)
+    return img.filter(ImageFilter.GaussianBlur(blur))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--prompt", type=str, required=True)
@@ -39,7 +61,7 @@ def main():
     parser.add_argument("--guidance_scale", type=float, default=7.0)
     parser.add_argument("--steps", type=int, default=25)
     parser.add_argument("--scribble", type=str, default=None,
-                        choices=["frame", "frame_small", "frame_v2"],
+                        choices=["frame", "frame_small", "frame_v2", "room"],
                         help="Use ControlNet with a scribble shape")
     parser.add_argument("--controlnet_scale", type=float, default=0.5)
     args = parser.parse_args()
@@ -64,6 +86,8 @@ def main():
             scribble_img = make_frame_scribble_small()
         elif args.scribble == "frame_v2":
             scribble_img = make_frame_scribble_v2()
+        elif args.scribble == "room":
+            scribble_img = make_room_scribble()
         scribble_img.save(f"{args.output_dir}/scribble.png")
         print(f"Using ControlNet scribble: {args.scribble}, scale={args.controlnet_scale}")
     else:
