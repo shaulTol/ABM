@@ -5,7 +5,7 @@
 #SBATCH --time=08:00:00
 #SBATCH --mem=48G
 #SBATCH --cpus-per-task=4
-#SBATCH --array=1
+#SBATCH --array=0-1
 #SBATCH --output=results_clip_da/guidance_gs_%a_%j.out
 #SBATCH --error=results_clip_da/guidance_gs_%a_%j.err
 
@@ -23,7 +23,7 @@ cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 
 mkdir -p results_clip_da
 
-# Array mapping: 0 → gs=1.0, 1 → gs=7.5
+# Array mapping: 0 → gs=1.0 (resume from checkpoint), 1 → gs=7.5 (full run)
 GS_VALUES=(1.0 7.5)
 GS_NAMES=(guidance_gs1p0 guidance_gs7p5)
 
@@ -32,20 +32,30 @@ NAME=${GS_NAMES[$SLURM_ARRAY_TASK_ID]}
 
 echo "=== Task $SLURM_ARRAY_TASK_ID: guidance_scale=$GS, name=$NAME ==="
 
-# Stage 1: SSA + DA + entropy suite + gender analysis
-python scripts/run_ssa_da_clip.py \
-    --model_id stabilityai/stable-diffusion-xl-base-1.0 \
-    --name "$NAME" \
-    --prompt "a superrealistic professional photograph of a person" \
-    --guidance_scale "$GS" --gen_steps 50 \
-    --height 1024 --width 1024 \
-    --n_samples 200 --n_traj 200 \
-    --T 500 --dt 0.001 --t_score 1 \
-    --score_batch_size 16 \
-    --clip_batch_size 1 \
-    --output_dir results_clip_da
+# gs=1.0 has a Langevin checkpoint from previous run — resume to skip gen+Langevin
+if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
+    python scripts/run_ssa_da_clip.py \
+        --model_id stabilityai/stable-diffusion-xl-base-1.0 \
+        --name "$NAME" \
+        --resume_checkpoint results_clip_da/langevin_ckpt_guidance_gs1p0.npz \
+        --height 1024 --width 1024 \
+        --clip_batch_size 1 \
+        --output_dir results_clip_da
+else
+    python scripts/run_ssa_da_clip.py \
+        --model_id stabilityai/stable-diffusion-xl-base-1.0 \
+        --name "$NAME" \
+        --prompt "a superrealistic professional photograph of a person" \
+        --guidance_scale "$GS" --gen_steps 50 \
+        --height 1024 --width 1024 \
+        --n_samples 200 --n_traj 200 \
+        --T 500 --dt 0.001 --t_score 1 \
+        --score_batch_size 16 \
+        --clip_batch_size 1 \
+        --output_dir results_clip_da
+fi
 
-# Stage 2: Full correlation table
+# Full correlation table
 python scripts/full_correlation_table.py \
     --latents_npz "results_clip_da/clip_da_latents_${NAME}.npz" \
     --clip_da_npz "results_clip_da/clip_da_${NAME}.npz" \

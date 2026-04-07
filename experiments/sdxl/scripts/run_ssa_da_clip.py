@@ -27,6 +27,14 @@ Usage:
         --n_samples 200 --n_traj 200 \
         --T 500 --dt 0.0001 \
         --output_dir results_clip_da
+
+    # Resume from checkpoint (skips generation + Langevin):
+    python scripts/run_ssa_da_clip.py \
+        --model_id stabilityai/stable-diffusion-xl-base-1.0 \
+        --name v9_resume \
+        --resume_checkpoint results_clip_da/langevin_ckpt_v9.npz \
+        --clip_batch_size 1 \
+        --output_dir results_clip_da
 """
 
 import os
@@ -115,36 +123,13 @@ def parse_args():
                    help="Also compute SSA/DA in Latent-CLIP space for comparison")
     p.add_argument("--output_dir", type=str, default=None)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--resume_checkpoint", type=str, default=None,
+                   help="Path to .npz checkpoint from a previous run (skips generation+Langevin)")
     return p.parse_args()
 
 
-def main():
-    args = parse_args()
-    output_dir = args.output_dir or os.path.join(EXP_DIR, "results_clip_da")
-    os.makedirs(output_dir, exist_ok=True)
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    latent_shape = (4, args.height // 8, args.width // 8)
-    d_latent = int(np.prod(latent_shape))
-
-    use_controlnet = args.controlnet_model_id is not None
-    if use_controlnet and args.control_image_path is None:
-        raise ValueError("--control_image_path required when using --controlnet_model_id")
-
-    print(f"=== run_ssa_da_clip.py (CLIP-mode SSA+DA) ===")
-    print(f"Model: {args.model_id}")
-    print(f"Name: {args.name}")
-    print(f"Device: {device}")
-    print(f"Prompt: '{args.prompt}'")
-    print(f"Guidance scale: {args.guidance_scale}")
-    if use_controlnet:
-        print(f"ControlNet: {args.controlnet_model_id}")
-        print(f"Control image: {args.control_image_path}")
-        print(f"ControlNet scale: {args.controlnet_scale}")
-    print(f"Latent shape: {latent_shape} ({d_latent}D)")
-    print(f"Config: n_samples={args.n_samples}, n_traj={args.n_traj}, "
-          f"T={args.T}, dt={args.dt}, t_score={args.t_score}")
-    print(f"CLIP model: {args.clip_model}")
+def run_stages_1_2(args, output_dir, device, latent_shape, use_controlnet):
+    """Stage 1 (generate latents) + Stage 2 (Langevin). Returns x0, snapshots, metadata."""
 
     # --- Wandb (optional) ---
     wandb_run = None
@@ -162,10 +147,8 @@ def main():
         print(f"  wandb init failed ({e}), continuing without logging")
 
     # =====================================================================
-    # Stage 1: Generate latents (same as v2)
+    # Stage 1: Generate latents
     # =====================================================================
-
-    # Load ControlNet
     controlnet = None
     control_pil = None
     control_image_tensor = None
@@ -184,7 +167,6 @@ def main():
         import torchvision.transforms as T
         control_image_tensor = T.ToTensor()(control_pil).unsqueeze(0).to(device)
 
-    # Load SDXL pipeline
     print("\n=== Loading SDXL pipeline ===")
     if use_controlnet:
         from diffusers import StableDiffusionXLControlNetPipeline
@@ -203,7 +185,6 @@ def main():
     scheduler = pipe.scheduler
     unet.eval()
 
-    # Encode prompt
     print("\n=== Encoding prompt ===")
     (prompt_embeds, negative_prompt_embeds,
      pooled_prompt_embeds, negative_pooled_prompt_embeds) = pipe.encode_prompt(
@@ -215,7 +196,6 @@ def main():
         dtype=torch.float16, device=device,
     )
 
-    # Generate latents
     print(f"\n=== Generating {args.n_samples} latents ===")
     t0 = time.time()
     gen_kwargs = {}
@@ -273,29 +253,139 @@ def main():
     print(f"  Langevin completed in {langevin_time:.1f}s ({langevin_time/3600:.1f}h)")
 
     # =====================================================================
-    # Stage 3: Free GPU for CLIP, embed all snapshots
+    # Save checkpoint (so CLIP embedding can resume if it OOMs)
     # =====================================================================
+    ckpt_path = os.path.join(output_dir, f"langevin_ckpt_{args.name}.npz")
+    ckpt_data = {
+        "x0_flat": x0_flat.numpy(),
+        "snapshot_lags": np.array(snapshot_lags),
+        "var_f": np.array(var_f),
+        "gen_time": np.array(gen_time),
+        "langevin_time": np.array(langevin_time),
+    }
+    for lag, snap in snapshots.items():
+        ckpt_data[f"snapshot_{lag}"] = snap.numpy()
+    np.savez_compressed(ckpt_path, **ckpt_data)
+    print(f"  Saved Langevin checkpoint: {ckpt_path}")
+
+    # Free GPU for CLIP
     print("\n=== Freeing GPU for CLIP embedding ===")
     del score_fn
     if controlnet is not None:
         controlnet = controlnet.to("cpu")
-    # Keep VAE on GPU (needed for decode), offload UNet
     vae = pipe.vae.to(device).float().eval()
     pipe.unet = pipe.unet.to("cpu")
     torch.cuda.empty_cache()
 
-    # Convert snapshots to numpy (already on CPU)
     x0_np = x0_flat.numpy()
     snapshots_np = {lag: snap.numpy() for lag, snap in snapshots.items()}
 
-    # Build CLIP embedder (reuses VAE already on GPU)
+    return vae, x0_np, snapshots_np, snapshot_lags, var_f, gen_time, langevin_time, wandb_run
+
+
+def run_stages_1_2_resume(args, output_dir, device, use_controlnet):
+    """Resume from checkpoint — load VAE only, skip generation + Langevin."""
+    print(f"=== RESUMING from checkpoint: {args.resume_checkpoint} ===")
+    ckpt = np.load(args.resume_checkpoint, allow_pickle=True)
+    x0_np = ckpt["x0_flat"]
+    snapshot_lags = ckpt["snapshot_lags"].tolist()
+    snapshots_np = {int(lag): ckpt[f"snapshot_{lag}"]
+                    for lag in snapshot_lags if f"snapshot_{lag}" in ckpt}
+    var_f = float(ckpt["var_f"])
+    gen_time = float(ckpt.get("gen_time", 0))
+    langevin_time = float(ckpt.get("langevin_time", 0))
+    print(f"  Loaded x0: {x0_np.shape}, {len(snapshots_np)} snapshots, var_f={var_f:.6f}")
+    print(f"  Previous gen_time={gen_time:.1f}s, langevin_time={langevin_time:.1f}s")
+
+    # Load only VAE for decode (no UNet needed)
+    print("\n=== Loading SDXL VAE for decode ===")
+    if use_controlnet:
+        from diffusers import StableDiffusionXLControlNetPipeline, ControlNetModel
+        controlnet = ControlNetModel.from_pretrained(
+            args.controlnet_model_id,
+            torch_dtype=torch.float16, use_safetensors=True,
+        )
+        pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
+            args.model_id, controlnet=controlnet,
+            torch_dtype=torch.float16, variant="fp16", use_safetensors=True,
+        )
+    else:
+        from diffusers import StableDiffusionXLPipeline
+        pipe = StableDiffusionXLPipeline.from_pretrained(
+            args.model_id,
+            torch_dtype=torch.float16, variant="fp16", use_safetensors=True,
+        )
+    vae = pipe.vae.to(device).float().eval()
+    # Don't even load UNet to GPU
+    del pipe.unet
+    del pipe
+    torch.cuda.empty_cache()
+
+    wandb_run = None
+    try:
+        import wandb
+        wandb_run = wandb.init(
+            project="sdxl-ssa",
+            name=f"clip_{args.name}_resume",
+            config=vars(args),
+            tags=["sdxl", "clip-mode", "resume"],
+            dir=os.environ.get("WANDB_DIR", "."),
+        )
+    except Exception:
+        pass
+
+    return vae, x0_np, snapshots_np, snapshot_lags, var_f, gen_time, langevin_time, wandb_run
+
+
+def main():
+    args = parse_args()
+    output_dir = args.output_dir or os.path.join(EXP_DIR, "results_clip_da")
+    os.makedirs(output_dir, exist_ok=True)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    latent_shape = (4, args.height // 8, args.width // 8)
+    d_latent = int(np.prod(latent_shape))
+
+    use_controlnet = args.controlnet_model_id is not None
+    if use_controlnet and args.control_image_path is None:
+        raise ValueError("--control_image_path required when using --controlnet_model_id")
+
+    print(f"=== run_ssa_da_clip.py (CLIP-mode SSA+DA) ===")
+    print(f"Model: {args.model_id}")
+    print(f"Name: {args.name}")
+    print(f"Device: {device}")
+    print(f"Prompt: '{args.prompt}'")
+    print(f"Guidance scale: {args.guidance_scale}")
+    if use_controlnet:
+        print(f"ControlNet: {args.controlnet_model_id}")
+        print(f"Control image: {args.control_image_path}")
+        print(f"ControlNet scale: {args.controlnet_scale}")
+    print(f"Latent shape: {latent_shape} ({d_latent}D)")
+    print(f"Config: n_samples={args.n_samples}, n_traj={args.n_traj}, "
+          f"T={args.T}, dt={args.dt}, t_score={args.t_score}")
+    print(f"CLIP model: {args.clip_model}")
+
+    # =====================================================================
+    # Stages 1+2: Generate + Langevin (or resume from checkpoint)
+    # =====================================================================
+    if args.resume_checkpoint is not None:
+        (vae, x0_np, snapshots_np, snapshot_lags, var_f,
+         gen_time, langevin_time, wandb_run) = run_stages_1_2_resume(
+            args, output_dir, device, use_controlnet)
+    else:
+        (vae, x0_np, snapshots_np, snapshot_lags, var_f,
+         gen_time, langevin_time, wandb_run) = run_stages_1_2(
+            args, output_dir, device, latent_shape, use_controlnet)
+
+    # =====================================================================
+    # Stage 3: CLIP embedding
+    # =====================================================================
     print("\n=== Loading real CLIP embedder ===")
     clip_embedder = RealCLIPEmbedder(
         vae, clip_model_name=args.clip_model, device=device,
         clip_batch_size=args.clip_batch_size,
     )
 
-    # Embed x0
     print(f"\n=== Embedding x0 ({x0_np.shape[0]} samples) via real CLIP ===")
     t0 = time.time()
     z0_clip = clip_embedder.embed(x0_np)  # (N, 768)
@@ -345,7 +435,6 @@ def main():
     analyzer = TextProbeAnalyzer(clip_model_name=args.clip_model, device=device)
     analyzer.define_probes()
 
-    # Direct cosine: DA direction vs text probes (works because both in CLIP space)
     da1_cosines = analyzer.score_direction(results["da1_eigvec"])
     da2_cosines = analyzer.score_direction(results["da2_eigvec"])
 
@@ -357,7 +446,6 @@ def main():
     for name in analyzer.probe_names:
         print(f"    {name:<15} cos = {da2_cosines[name]:>7.4f}")
 
-    # Per-sample: project z0 onto DA1, correlate with probe scores
     da1_scores = (z0_clip - results["mu"]) @ results["da1_eigvec"]
     da1_corr = analyzer.correlate_with_ranking(z0_clip, da1_scores)
 
@@ -370,9 +458,9 @@ def main():
     # Stage 5a: Gender-sliced SSA
     # =====================================================================
     print("\n=== Gender-sliced SSA ===")
-    gender_axis = analyzer.probe_axes["gender"]  # (768,) normalized
+    gender_axis = analyzer.probe_axes["gender"]
     z0_c = z0_clip - results["mu"]
-    s0_gender = z0_c @ gender_axis  # (N,)
+    s0_gender = z0_c @ gender_axis
     s0_gender_c = s0_gender - s0_gender.mean()
     var_gender = np.mean(s0_gender_c ** 2)
 
@@ -391,14 +479,12 @@ def main():
     print(f"  SSA_full          = {results['ssa']:.6f}")
     print(f"  Ratio (sliced/full) = {ssa_gender_sliced / max(results['ssa'], 1e-12):.4f}")
 
-    # 1D gender KDE entropy
     from scipy.stats import gaussian_kde as _gaussian_kde
     gender_kde = _gaussian_kde(s0_gender)
     gender_log_pdf = gender_kde.logpdf(s0_gender)
     gender_entropy_1d = float(-np.mean(gender_log_pdf))
     print(f"  H_gender_1d (KDE) = {gender_entropy_1d:.4f}")
 
-    # Gender histogram + KDE overlay
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -422,6 +508,56 @@ def main():
         print(f"  Gender histogram failed: {e}")
 
     # =====================================================================
+    # Stage 5a2: Glasses-sliced SSA
+    # =====================================================================
+    ssa_glasses_sliced = None
+    if "glasses" in analyzer.probe_axes:
+        print("\n=== Glasses-sliced SSA ===")
+        glasses_axis = analyzer.probe_axes["glasses"]
+        s0_glasses = z0_c @ glasses_axis
+        s0_glasses_c = s0_glasses - s0_glasses.mean()
+        var_glasses = np.mean(s0_glasses_c ** 2)
+
+        rho_sq_glasses = []
+        for lag in results["snapshot_lags"]:
+            if lag not in z_snapshots:
+                continue
+            z_tau_c = z_snapshots[lag] - results["mu"]
+            s_tau_glasses = z_tau_c @ glasses_axis
+            s_tau_glasses_c = s_tau_glasses - s_tau_glasses.mean()
+            rho_g = np.mean(s0_glasses_c * s_tau_glasses_c) / max(var_glasses, 1e-12)
+            rho_sq_glasses.append(rho_g ** 2)
+        rho_sq_glasses = np.array(rho_sq_glasses)
+        ssa_glasses_sliced = float(np.mean(rho_sq_glasses))
+        print(f"  SSA_glasses_sliced = {ssa_glasses_sliced:.6f}")
+        print(f"  SSA_full           = {results['ssa']:.6f}")
+        print(f"  Ratio (sliced/full) = {ssa_glasses_sliced / max(results['ssa'], 1e-12):.4f}")
+
+        glasses_kde = _gaussian_kde(s0_glasses)
+        glasses_log_pdf = glasses_kde.logpdf(s0_glasses)
+        glasses_entropy_1d = float(-np.mean(glasses_log_pdf))
+        print(f"  H_glasses_1d (KDE) = {glasses_entropy_1d:.4f}")
+
+        try:
+            fig_gl, ax_gl = plt.subplots(figsize=(6, 4))
+            ax_gl.hist(s0_glasses, bins=30, density=True, alpha=0.5, color="orange",
+                       edgecolor="k", linewidth=0.5, label="histogram")
+            xs_gl = np.linspace(s0_glasses.min() - 0.5, s0_glasses.max() + 0.5, 200)
+            ax_gl.plot(xs_gl, glasses_kde(xs_gl), "r-", lw=2, label="KDE")
+            ax_gl.set_xlabel("Glasses score (CLIP)")
+            ax_gl.set_ylabel("Density")
+            ax_gl.set_title(f"{args.name}: Glasses Distribution\nH={glasses_entropy_1d:.3f}")
+            ax_gl.legend()
+            ax_gl.grid(True, alpha=0.3)
+            fig_gl.tight_layout()
+            glhist_path = os.path.join(output_dir, f"clip_da_{args.name}_glasses_hist.png")
+            fig_gl.savefig(glhist_path, dpi=150)
+            plt.close(fig_gl)
+            print(f"  Saved glasses histogram: {glhist_path}")
+        except Exception as e:
+            print(f"  Glasses histogram failed: {e}")
+
+    # =====================================================================
     # Stage 5b: Optional LC comparison
     # =====================================================================
     lc_results = None
@@ -435,7 +571,6 @@ def main():
                 z_snaps_lc[lag] = lc_embedder.embed(snapshots_np[lag])
         lc_results = compute_ssa_da(z0_lc, z_snaps_lc, snapshot_lags)
 
-        # Cross-space DA1 comparison (per-sample projection correlation)
         from scipy.stats import spearmanr
         da1_clip_scores = (z0_clip - results["mu"]) @ results["da1_eigvec"]
         da1_lc_scores = (z0_lc - lc_results["mu"]) @ lc_results["da1_eigvec"]
@@ -450,7 +585,6 @@ def main():
     if args.compute_entropy:
         print("\n=== Computing entropy suite in CLIP PCA space ===")
 
-        # Gaussian entropy at k=5,10,20,50
         k_pca_gauss = [5, 10, 20, 50]
         max_k = max(k_pca_gauss)
         _, all_eigvals = pca_project(z0_clip, max_k)
@@ -461,7 +595,6 @@ def main():
             print(f"  H_gauss(k={k}): {h:.4f}")
         entropy_suite["gaussian"] = gauss_results
 
-        # kNN entropy at k_pca=5,10,20,50
         knn_results = {}
         for k in k_pca_gauss:
             X_proj, _ = pca_project(z0_clip, k)
@@ -470,7 +603,6 @@ def main():
             print(f"  H_knn(k_pca={k}): {h:.4f}")
         entropy_suite["knn"] = knn_results
 
-        # KDE entropy at k_pca=2,5
         k_pca_kde = [2, 5]
         kde_results = {}
         for k in k_pca_kde:
@@ -480,45 +612,12 @@ def main():
             print(f"  H_kde(k_pca={k}): {h:.4f}")
         entropy_suite["kde"] = kde_results
 
-        # Legacy: single kNN at full CLIP dim for backward compat
         entropy = compute_knn_entropy(torch.from_numpy(z0_clip), k=args.entropy_k)
         entropy_suite["knn_full_768"] = float(entropy)
         print(f"  H_knn(full 768D): {entropy:.4f}")
 
     # =====================================================================
-    # Stage 7: Visualization
-    # =====================================================================
-    print("\n=== Generating visualizations ===")
-
-    # Top/bottom grid for DA1
-    grid_path = os.path.join(output_dir, f"clip_da_{args.name}_da1_grid.png")
-    make_topbottom_grid(vae, x0_np, da1_scores, n=8, path=grid_path, device=device)
-
-    # Rho decay + gap profile plots
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-
-        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-        plot_rho_decay(results["rho_sq"], results["snapshot_lags"],
-                       label="CLIP (768D)", ax=axes[0])
-        if lc_results is not None:
-            plot_rho_decay(lc_results["rho_sq"], lc_results["snapshot_lags"],
-                           label="LC (512D)", ax=axes[0])
-        plot_gap_profile(results["gap12"], results["gap23"],
-                         results["snapshot_lags"], ax=axes[1])
-        fig.suptitle(f"SSA + DA: {args.name}")
-        fig.tight_layout()
-        fig_path = os.path.join(output_dir, f"clip_da_{args.name}_curves.png")
-        fig.savefig(fig_path, dpi=150)
-        plt.close(fig)
-        print(f"  Saved curves: {fig_path}")
-    except Exception as e:
-        print(f"  Plot failed: {e}")
-
-    # =====================================================================
-    # Stage 8: Save results
+    # Stage 7: Save results (before visualization, so data is never lost)
     # =====================================================================
     json_results = {
         "name": args.name,
@@ -551,6 +650,7 @@ def main():
         "ssa_gender_sliced": ssa_gender_sliced,
         "rho_sq_gender": rho_sq_gender.tolist(),
         "gender_entropy_1d": gender_entropy_1d,
+        "ssa_glasses_sliced": ssa_glasses_sliced,
         "entropy_suite": entropy_suite,
         "gen_time_s": gen_time,
         "langevin_time_s": langevin_time,
@@ -568,7 +668,6 @@ def main():
         json.dump(json_results, f, indent=2)
     print(f"\nSaved JSON: {json_path}")
 
-    # Save curves + eigenvectors
     npz_data = {
         "rho_sq": results["rho_sq"],
         "snapshot_lags": np.array(results["snapshot_lags"]),
@@ -587,7 +686,6 @@ def main():
     np.savez_compressed(npz_path, **npz_data)
     print(f"Saved NPZ: {npz_path}")
 
-    # Save latent snapshots
     vis_data = {"x0": x0_np}
     for key_lag in [results["da1_optimal_lag"], results["da2_optimal_lag"]]:
         if key_lag in snapshots_np:
@@ -596,7 +694,6 @@ def main():
     np.savez_compressed(vis_path, **vis_data)
     print(f"Saved latents: {vis_path}")
 
-    # --- Wandb ---
     if wandb_run is not None:
         wandb_run.log({
             "ssa_clip": results["ssa"],
@@ -606,7 +703,41 @@ def main():
         })
         wandb_run.finish()
 
-    # --- Summary ---
+    # =====================================================================
+    # Stage 8: Visualization (after saves, so data is safe even if this fails)
+    # =====================================================================
+    print("\n=== Generating visualizations ===")
+
+    latent_shape = (4, args.height // 8, args.width // 8)
+    try:
+        grid_path = os.path.join(output_dir, f"clip_da_{args.name}_da1_grid.png")
+        make_topbottom_grid(vae, x0_np, da1_scores, n=8, path=grid_path,
+                            latent_shape=latent_shape, device=device)
+    except Exception as e:
+        print(f"  DA1 grid failed: {e}")
+
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        plot_rho_decay(results["rho_sq"], results["snapshot_lags"],
+                       label="CLIP (768D)", ax=axes[0])
+        if lc_results is not None:
+            plot_rho_decay(lc_results["rho_sq"], lc_results["snapshot_lags"],
+                           label="LC (512D)", ax=axes[0])
+        plot_gap_profile(results["gap12"], results["gap23"],
+                         results["snapshot_lags"], ax=axes[1])
+        fig.suptitle(f"SSA + DA: {args.name}")
+        fig.tight_layout()
+        fig_path = os.path.join(output_dir, f"clip_da_{args.name}_curves.png")
+        fig.savefig(fig_path, dpi=150)
+        plt.close(fig)
+        print(f"  Saved curves: {fig_path}")
+    except Exception as e:
+        print(f"  Plot failed: {e}")
+
     total_time = gen_time + langevin_time + embed_time + ssa_time
     print(f"\n{'='*60}")
     print(f"Summary: {args.name} (CLIP-mode)")
@@ -615,6 +746,8 @@ def main():
     print(f"  SSA_CLIP = {results['ssa']:.6f}")
     print(f"  SSA_gender_sliced = {ssa_gender_sliced:.6f}")
     print(f"  H_gender_1d = {gender_entropy_1d:.4f}")
+    if ssa_glasses_sliced is not None:
+        print(f"  SSA_glasses_sliced = {ssa_glasses_sliced:.6f}")
     if entropy is not None:
         print(f"  Entropy (kNN full) = {entropy:.4f}")
     print(f"  DA1: gap={results['da1_gap']:.2f}x at lag={results['da1_optimal_lag']}")
