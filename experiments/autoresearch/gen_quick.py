@@ -15,6 +15,11 @@ def make_frame_scribble(size=1024, margin=80, lw=6, blur=8):
     return img.filter(ImageFilter.GaussianBlur(blur))
 
 
+def make_frame_scribble_small(size=1024, margin=320, lw=6, blur=8):
+    """Small centered frame scribble."""
+    return make_frame_scribble(size=size, margin=margin, lw=lw, blur=blur)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--prompt", type=str, required=True)
@@ -23,7 +28,7 @@ def main():
     parser.add_argument("--guidance_scale", type=float, default=7.0)
     parser.add_argument("--steps", type=int, default=25)
     parser.add_argument("--scribble", type=str, default=None,
-                        choices=["frame"],
+                        choices=["frame", "frame_small"],
                         help="Use ControlNet with a scribble shape")
     parser.add_argument("--controlnet_scale", type=float, default=0.5)
     args = parser.parse_args()
@@ -44,6 +49,8 @@ def main():
 
         if args.scribble == "frame":
             scribble_img = make_frame_scribble()
+        elif args.scribble == "frame_small":
+            scribble_img = make_frame_scribble_small()
         scribble_img.save(f"{args.output_dir}/scribble.png")
         print(f"Using ControlNet scribble: {args.scribble}, scale={args.controlnet_scale}")
     else:
