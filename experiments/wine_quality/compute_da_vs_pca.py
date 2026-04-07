@@ -158,13 +158,16 @@ def main():
     parser.add_argument('--dt', type=float, default=None, help='Override dt (skip stability test)')
     parser.add_argument('--bw-mult', type=float, default=1.0, help='Bandwidth multiplier on Scott')
     parser.add_argument('--suffix', type=str, default='', help='Suffix for output files')
+    parser.add_argument('--log-transform', action='store_true',
+                        help='Log-transform skewed features before standardizing')
     args = parser.parse_args()
 
     device = torch.device('cpu')
     t_start = time.time()
     suffix = f'_{args.suffix}' if args.suffix else ''
 
-    print(f'=== Config: dt={args.dt}, bw_mult={args.bw_mult}, suffix="{args.suffix}" ===')
+    print(f'=== Config: dt={args.dt}, bw_mult={args.bw_mult}, log={args.log_transform}, '
+          f'suffix="{args.suffix}" ===')
 
     # ── 1. Load data ──
     print('[1/7] Loading Wine Quality dataset...')
@@ -186,6 +189,17 @@ def main():
     n_red = (labels == 0).sum()
     n_white = (labels == 1).sum()
     print(f'  Balanced: {N} samples ({n_red} red, {n_white} white)')
+
+    # Log-transform skewed features if requested
+    if args.log_transform:
+        # Skewed features: chlorides, sulphates, residual sugar, free SO2, total SO2
+        LOG_FEATURES = [3, 4, 5, 6, 9]  # residual sugar, chlorides, free SO2, total SO2, sulphates
+        X_raw = X_raw.copy()
+        X_raw_all = X_raw_all.copy()
+        for i in LOG_FEATURES:
+            X_raw[:, i] = np.log1p(X_raw[:, i])
+            X_raw_all[:, i] = np.log1p(X_raw_all[:, i])
+        print(f'  Log-transformed: {[FEATURE_NAMES[i] for i in LOG_FEATURES]}')
 
     scaler = StandardScaler()
     X = scaler.fit_transform(X_raw)
