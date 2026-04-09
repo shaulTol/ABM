@@ -131,7 +131,37 @@ def parse_args():
                    help="Only include lags >= this value when computing SSA mean")
     p.add_argument("--ssa_only", action="store_true",
                    help="Skip DA eigendecomposition, text probe cosines on DA, and DA1 grid")
+    p.add_argument("--snapshot_schedule", type=str, default="linear",
+                   choices=["linear", "log_and_fixed"],
+                   help="Snapshot schedule: 'linear' (20 evenly spaced) or "
+                        "'log_and_fixed' (log2 + every-20 union, ~108 points)")
+    p.add_argument("--no_save_checkpoint", action="store_true",
+                   help="Skip saving large Langevin checkpoint to save disk")
     return p.parse_args()
+
+
+def compute_snapshot_lags(T, schedule="linear"):
+    """Compute snapshot lag values based on schedule type.
+
+    Args:
+        T: total Langevin steps
+        schedule: 'linear' (20 evenly spaced) or 'log_and_fixed' (log2 + every-20)
+
+    Returns:
+        sorted list of lag values
+    """
+    if schedule == "log_and_fixed":
+        log_lags = [2**i for i in range(int(np.log2(T)) + 1) if 2**i <= T]
+        if T not in log_lags:
+            log_lags.append(T)
+        fixed_lags = list(range(20, T + 1, 20))
+        snapshot_lags = sorted(set(log_lags + fixed_lags))
+    else:  # linear
+        snapshot_lags = sorted(set(int(round(x)) for x in np.linspace(10, T, 20)))
+        if T not in snapshot_lags:
+            snapshot_lags.append(T)
+        snapshot_lags = sorted(snapshot_lags)
+    return snapshot_lags
 
 
 def run_stages_1_2(args, output_dir, device, latent_shape, use_controlnet):
@@ -241,12 +271,10 @@ def run_stages_1_2(args, output_dir, device, latent_shape, use_controlnet):
         **cn_score_kwargs,
     )
 
-    snapshot_lags = sorted(set(int(round(x)) for x in np.linspace(10, args.T, 20)))
-    if args.T not in snapshot_lags:
-        snapshot_lags.append(args.T)
-    snapshot_lags = sorted(snapshot_lags)
+    snapshot_lags = compute_snapshot_lags(args.T, args.snapshot_schedule)
 
     print(f"\n=== Langevin dynamics ({args.n_traj} traj x {args.T} steps) ===")
+    print(f"  Snapshot schedule: {args.snapshot_schedule} ({len(snapshot_lags)} points)")
     print(f"  Snapshot lags: {snapshot_lags}")
     t0 = time.time()
     snapshots, x0_flat = run_langevin_latent_space(
@@ -261,18 +289,21 @@ def run_stages_1_2(args, output_dir, device, latent_shape, use_controlnet):
     # =====================================================================
     # Save checkpoint (so CLIP embedding can resume if it OOMs)
     # =====================================================================
-    ckpt_path = os.path.join(output_dir, f"langevin_ckpt_{args.name}.npz")
-    ckpt_data = {
-        "x0_flat": x0_flat.numpy(),
-        "snapshot_lags": np.array(snapshot_lags),
-        "var_f": np.array(var_f),
-        "gen_time": np.array(gen_time),
-        "langevin_time": np.array(langevin_time),
-    }
-    for lag, snap in snapshots.items():
-        ckpt_data[f"snapshot_{lag}"] = snap.numpy()
-    np.savez_compressed(ckpt_path, **ckpt_data)
-    print(f"  Saved Langevin checkpoint: {ckpt_path}")
+    if not args.no_save_checkpoint:
+        ckpt_path = os.path.join(output_dir, f"langevin_ckpt_{args.name}.npz")
+        ckpt_data = {
+            "x0_flat": x0_flat.numpy(),
+            "snapshot_lags": np.array(snapshot_lags),
+            "var_f": np.array(var_f),
+            "gen_time": np.array(gen_time),
+            "langevin_time": np.array(langevin_time),
+        }
+        for lag, snap in snapshots.items():
+            ckpt_data[f"snapshot_{lag}"] = snap.numpy()
+        np.savez_compressed(ckpt_path, **ckpt_data)
+        print(f"  Saved Langevin checkpoint: {ckpt_path}")
+    else:
+        print("  Skipping checkpoint save (--no_save_checkpoint)")
 
     # Free GPU for CLIP
     print("\n=== Freeing GPU for CLIP embedding ===")
@@ -432,12 +463,10 @@ def run_stages_1_2_resume_x0(args, output_dir, device, latent_shape, use_control
     )
 
     # --- Langevin ---
-    snapshot_lags = sorted(set(int(round(x)) for x in np.linspace(10, args.T, 20)))
-    if args.T not in snapshot_lags:
-        snapshot_lags.append(args.T)
-    snapshot_lags = sorted(snapshot_lags)
+    snapshot_lags = compute_snapshot_lags(args.T, args.snapshot_schedule)
 
     print(f"\n=== Langevin dynamics ({args.n_traj} traj x {args.T} steps, dt={args.dt}) ===")
+    print(f"  Snapshot schedule: {args.snapshot_schedule} ({len(snapshot_lags)} points)")
     print(f"  Snapshot lags: {snapshot_lags}")
     gen_time = 0.0  # generation skipped
     t0 = time.time()
@@ -451,18 +480,21 @@ def run_stages_1_2_resume_x0(args, output_dir, device, latent_shape, use_control
     print(f"  Langevin completed in {langevin_time:.1f}s ({langevin_time/3600:.1f}h)")
 
     # --- Save checkpoint ---
-    ckpt_path = os.path.join(output_dir, f"langevin_ckpt_{args.name}.npz")
-    ckpt_data = {
-        "x0_flat": x0_out.numpy(),
-        "snapshot_lags": np.array(snapshot_lags),
-        "var_f": np.array(var_f),
-        "gen_time": np.array(gen_time),
-        "langevin_time": np.array(langevin_time),
-    }
-    for lag, snap in snapshots.items():
-        ckpt_data[f"snapshot_{lag}"] = snap.numpy()
-    np.savez_compressed(ckpt_path, **ckpt_data)
-    print(f"  Saved Langevin checkpoint: {ckpt_path}")
+    if not args.no_save_checkpoint:
+        ckpt_path = os.path.join(output_dir, f"langevin_ckpt_{args.name}.npz")
+        ckpt_data = {
+            "x0_flat": x0_out.numpy(),
+            "snapshot_lags": np.array(snapshot_lags),
+            "var_f": np.array(var_f),
+            "gen_time": np.array(gen_time),
+            "langevin_time": np.array(langevin_time),
+        }
+        for lag, snap in snapshots.items():
+            ckpt_data[f"snapshot_{lag}"] = snap.numpy()
+        np.savez_compressed(ckpt_path, **ckpt_data)
+        print(f"  Saved Langevin checkpoint: {ckpt_path}")
+    else:
+        print("  Skipping checkpoint save (--no_save_checkpoint)")
 
     # --- Free GPU for CLIP ---
     print("\n=== Freeing GPU for CLIP embedding ===")
@@ -798,6 +830,7 @@ def main():
         "ssa_clip_all": results.get("ssa_all"),
         "ssa_min_lag": args.ssa_min_lag,
         "ssa_only": args.ssa_only,
+        "snapshot_schedule": args.snapshot_schedule,
         "entropy_clip": entropy,
         "ssa_gender_sliced": ssa_gender_sliced,
         "rho_sq_gender": rho_sq_gender.tolist(),
@@ -809,6 +842,23 @@ def main():
         "embed_time_s": embed_time,
         "ssa_time_s": ssa_time,
     }
+
+    # Partitioned SSA for log_and_fixed schedule
+    if args.snapshot_schedule == "log_and_fixed":
+        used_lags = np.array(results["snapshot_lags"])
+        rho_sq = results["rho_sq"]
+        log_lags = [2**i for i in range(int(np.log2(args.T)) + 1) if 2**i <= args.T]
+        if args.T not in log_lags:
+            log_lags.append(args.T)
+        fixed_lags = list(range(20, args.T + 1, 20))
+        log_mask = np.isin(used_lags, log_lags)
+        fixed_mask = np.isin(used_lags, fixed_lags)
+        json_results["ssa_log"] = float(np.mean(rho_sq[log_mask])) if log_mask.any() else None
+        json_results["ssa_fixed20"] = float(np.mean(rho_sq[fixed_mask])) if fixed_mask.any() else None
+        json_results["rho_sq_all"] = rho_sq.tolist()
+        json_results["snapshot_lags_all"] = used_lags.tolist()
+        json_results["log_lags"] = log_lags
+        json_results["fixed20_lags"] = fixed_lags
 
     if not args.ssa_only:
         json_results.update({
