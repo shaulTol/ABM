@@ -41,8 +41,8 @@ python scripts/run_ssa_da_clip.py \
     --prompt "a superrealistic professional photograph of a person" \
     --guidance_scale "$GS" --gen_steps 50 \
     --height 1024 --width 1024 \
-    --resume_x0 "results_guidance_sweep/gen_sweep_${GS_LABEL}_x0.npz" \
-    --n_samples 2000 --n_traj 200 \
+    --resume_x0 "results_guidance_sweep/gen_sweep_${GS_LABEL}_quick_x0.npz" \
+    --n_samples 200 --n_traj 200 \
     --T 2000 --dt 0.0005 --t_score 1 \
     --snapshot_schedule log_and_fixed \
     --ssa_only \
