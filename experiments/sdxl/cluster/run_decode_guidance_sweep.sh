@@ -34,7 +34,10 @@ for LBL in gs1p0 gs3p0 gs7p5 gs15p0; do
     python -u scripts/decode_all_grids.py \
         --latents_npz results_guidance_sweep/gen_sweep_${LBL}_quick_x0.npz \
         --model_id stabilityai/stable-diffusion-xl-base-1.0 \
+        --latent_h 128 --latent_w 128 \
+        --batch_size 1 \
         --n_cols 20 \
+        --thumb_size 256 \
         --output_path results_guidance_sweep/grid_${LBL}.png
 done
 
