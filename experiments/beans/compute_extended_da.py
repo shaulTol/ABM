@@ -26,6 +26,12 @@ EXPDIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def load_dry_bean():
+    """Load from npz (cluster-safe, no pandas dependency)."""
+    npz_path = os.path.join(EXPDIR, 'data', 'dry_bean.npz')
+    if os.path.exists(npz_path):
+        d = np.load(npz_path, allow_pickle=True)
+        return d['X'].astype(float), d['labels'], list(d['feature_cols'])
+    # Fallback to xlsx (local only)
     import pandas as pd
     path = os.path.join(EXPDIR, 'data', 'DryBeanDataset', 'Dry_Bean_Dataset.xlsx')
     df = pd.read_excel(path)
