@@ -32,7 +32,7 @@ _mod = _ilu.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 KDEScore = _mod.KDEScore
 from experiments.noise_floor.noise_floor_utils import (
-    analytic_floor, permutation_floor, find_tau_star
+    analytic_floor, permutation_floor, find_tau_star, find_first_crossing
 )
 
 OUTDIR = os.path.dirname(os.path.abspath(__file__))
@@ -163,12 +163,12 @@ def main():
     # --- Find τ* with permutation floor ---
     print('\n[3/4] Finding τ* ...')
 
-    # m=2: both λ_1 and λ_2 must exceed perm floor
-    tau_star_idx_m2, tau_star_m2 = find_tau_star(
+    # m=2: last lag before λ_2 first drops below perm floor
+    tau_star_idx_m2, tau_star_m2 = find_first_crossing(
         checkpoints, all_eigenvalues, perm_floors, m=2
     )
-    # m=1: only λ_1
-    tau_star_idx_m1, tau_star_m1 = find_tau_star(
+    # m=1: last lag before λ_1 first drops below perm floor
+    tau_star_idx_m1, tau_star_m1 = find_first_crossing(
         checkpoints, all_eigenvalues, perm_floors, m=1
     )
 
@@ -180,17 +180,18 @@ def main():
           f'λ_2 = {all_eigenvalues[tau_star_idx_m2, 1]:.5f}, '
           f'floor = {perm_floors[tau_star_idx_m2]:.5f}')
 
-    # Also find τ* using analytic floor for comparison
-    tau_star_idx_af2, tau_star_af2 = find_tau_star(
+    # Also find τ* using analytic floor — first crossing criterion
+    # (last lag BEFORE λ_m first drops below the analytic floor)
+    tau_star_idx_af2, tau_star_af2 = find_first_crossing(
         checkpoints, all_eigenvalues, analytic_floors_arr, m=2
     )
-    tau_star_idx_af1, tau_star_af1 = find_tau_star(
+    tau_star_idx_af1, tau_star_af1 = find_first_crossing(
         checkpoints, all_eigenvalues, analytic_floors_arr, m=1
     )
-    print(f'\n  Analytic floor τ* (m=1): step={tau_star_af1}, phys_t={tau_star_af1*kde_dt:.1f}ps')
+    print(f'\n  Analytic floor τ* (m=1, first crossing): step={tau_star_af1}, phys_t={tau_star_af1*kde_dt:.1f}ps')
     print(f'    λ_1 = {all_eigenvalues[tau_star_idx_af1, 0]:.5f}, '
           f'floor = {analytic_floors_arr[tau_star_idx_af1]:.5f}')
-    print(f'  Analytic floor τ* (m=2): step={tau_star_af2}, phys_t={tau_star_af2*kde_dt:.1f}ps')
+    print(f'  Analytic floor τ* (m=2, first crossing): step={tau_star_af2}, phys_t={tau_star_af2*kde_dt:.1f}ps')
     print(f'    λ_1 = {all_eigenvalues[tau_star_idx_af2, 0]:.5f}, '
           f'λ_2 = {all_eigenvalues[tau_star_idx_af2, 1]:.5f}, '
           f'floor = {analytic_floors_arr[tau_star_idx_af2]:.5f}')
