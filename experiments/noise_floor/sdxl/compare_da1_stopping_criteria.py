@@ -221,20 +221,74 @@ def main():
         all_cosines[label] = cosines
         all_correlations[label] = correlations
 
+    # --- PC1 analysis ---
+    print("\n=== PC1 Correlations ===")
+    Xc = clip_embeddings - mu_clip
+    cov = Xc.T @ Xc / (N - 1)
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    idx = np.argsort(eigvals)[::-1].copy()
+    pc1 = eigvecs[:, idx[0]]
+    pc2 = eigvecs[:, idx[1]]
+    var_explained_1 = eigvals[idx[0]] / eigvals.sum() * 100
+    var_explained_2 = eigvals[idx[1]] / eigvals.sum() * 100
+    print(f"  PC1 var explained: {var_explained_1:.1f}%")
+    print(f"  PC2 var explained: {var_explained_2:.1f}%")
+
+    pc1_scores = Xc @ pc1
+    pc2_scores = Xc @ pc2
+
+    pc1_cosines = {}
+    pc1_correlations = {}
+    pc2_cosines = {}
+    pc2_correlations = {}
+    for name, axis in probe_axes.items():
+        pc1_cosines[name] = float(np.dot(pc1 / np.linalg.norm(pc1), axis))
+        pc2_cosines[name] = float(np.dot(pc2 / np.linalg.norm(pc2), axis))
+        probe_scores = clip_embeddings @ axis
+        rho1, p1 = spearmanr(pc1_scores, probe_scores)
+        rho2, p2 = spearmanr(pc2_scores, probe_scores)
+        pc1_correlations[name] = {"rho": float(rho1), "pvalue": float(p1)}
+        pc2_correlations[name] = {"rho": float(rho2), "pvalue": float(p2)}
+
+    print("  PC1 cosines:")
+    for name in probe_axes:
+        print(f"    {name:<15} cos = {pc1_cosines[name]:>7.4f}")
+    print("  PC1 Spearman:")
+    for name in probe_axes:
+        r = pc1_correlations[name]
+        print(f"    {name:<15} rho = {r['rho']:>7.4f} (p={r['pvalue']:.2e})")
+    print("  PC2 cosines:")
+    for name in probe_axes:
+        print(f"    {name:<15} cos = {pc2_cosines[name]:>7.4f}")
+    print("  PC2 Spearman:")
+    for name in probe_axes:
+        r = pc2_correlations[name]
+        print(f"    {name:<15} rho = {r['rho']:>7.4f} (p={r['pvalue']:.2e})")
+
+    # DA1 vs PC1 alignment
+    for label, da1 in da1_directions.items():
+        cos_da1_pc1 = abs(float(np.dot(da1 / np.linalg.norm(da1), pc1 / np.linalg.norm(pc1))))
+        print(f"  |cos(DA1_{label}, PC1)| = {cos_da1_pc1:.4f}")
+
     # --- Summary table ---
-    print("\n=== Summary: DA1 Gender Correlation ===")
-    print(f"{'Criterion':>15s}  {'τ*':>6s}  {'cos(gender)':>12s}  {'ρ(gender)':>10s}")
+    print("\n=== Summary: Gender Correlation ===")
+    print(f"{'Direction':>15s}  {'τ*':>6s}  {'cos(gender)':>12s}  {'ρ(gender)':>10s}")
     print("-" * 55)
     for label in da1_directions:
         tau = tau_values[label]
         cos_g = all_cosines[label]['gender']
         rho_g = all_correlations[label]['gender']['rho']
-        print(f"{label:>15s}  {tau:>6d}  {cos_g:>12.4f}  {rho_g:>10.4f}")
+        print(f"{'DA1_'+label:>15s}  {tau:>6d}  {cos_g:>12.4f}  {rho_g:>10.4f}")
+    print(f"{'PC1':>15s}  {'—':>6s}  {pc1_cosines['gender']:>12.4f}  {pc1_correlations['gender']['rho']:>10.4f}")
+    print(f"{'PC2':>15s}  {'—':>6s}  {pc2_cosines['gender']:>12.4f}  {pc2_correlations['gender']['rho']:>10.4f}")
 
-    save_results(da1_directions, tau_values, all_cosines, all_correlations)
+    save_results(da1_directions, tau_values, all_cosines, all_correlations,
+                 pc1_cosines, pc1_correlations, pc2_cosines, pc2_correlations)
 
 
-def save_results(da1_directions, tau_values, all_cosines, all_correlations):
+def save_results(da1_directions, tau_values, all_cosines, all_correlations,
+                 pc1_cosines=None, pc1_correlations=None,
+                 pc2_cosines=None, pc2_correlations=None):
     results = {
         'experiment': 'sdxl_square_N1000_da1_stopping_comparison',
         'tau_values': {k: int(v) for k, v in tau_values.items()},
@@ -242,6 +296,11 @@ def save_results(da1_directions, tau_values, all_cosines, all_correlations):
         'probe_cosines': {k: v for k, v in all_cosines.items()},
         'probe_correlations': {k: v for k, v in all_correlations.items()},
     }
+    if pc1_cosines is not None:
+        results['pc1_cosines'] = pc1_cosines
+        results['pc1_correlations'] = pc1_correlations
+        results['pc2_cosines'] = pc2_cosines
+        results['pc2_correlations'] = pc2_correlations
 
     # Pairwise direction cosines
     labels = list(da1_directions.keys())
