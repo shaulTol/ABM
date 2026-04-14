@@ -47,20 +47,11 @@ def main():
     for i, lag in enumerate(lags):
         all_eigenvalues[i] = da_npz[f'eigenvalues_lag{lag}']
 
-    # sigma_f_sq from N=200 CLIP embeddings (same distribution)
-    sq200 = np.load(os.path.join(results_dir,
-                    'clip_da_autoresearch_square_T2500.npz'),
-                    allow_pickle=True)
-    mu_clip = sq200['mu_clip']
-
-    proj = np.load(os.path.join(os.path.dirname(__file__), '..', '..', 'autoresearch',
-                                'results_face_boxed', 'phase3_rank2',
-                                'projections_vitl14.npz'))
-    clip_emb = proj['embeddings']  # (200, 768)
-    centered = clip_emb - mu_clip
+    # sigma_f_sq = (1/d) * tr(Cov_f) in CLIP space, computed from N=200 embeddings.
+    # This is a population property of the distribution, independent of N.
     d = 768
     N = 1000  # N for the floor computation
-    sigma_f_sq = np.sum(centered ** 2) / (clip_emb.shape[0] * d)
+    sigma_f_sq = 0.000340  # from N=200 CLIP embeddings (see run_sdxl_noise_floor.py)
     gamma = d / N
 
     print(f'd={d}, N={N}, dt={dt}')
