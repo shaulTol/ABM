@@ -106,7 +106,7 @@ def main():
 
     vae = AutoencoderKL.from_pretrained("stabilityai/sdxl-turbo",
                                          subfolder="vae",
-                                         torch_dtype=torch.float16).to(device)
+                                         torch_dtype=torch.float32).to(device)
     vae.eval()
 
     clip_model = CLIPModel.from_pretrained("openai/clip-vit-large-patch14").to(device)
@@ -127,7 +127,7 @@ def main():
 
     print(f"VAE-decoding + CLIP-encoding {N} images...")
     all_embeddings = []
-    x0_torch = torch.from_numpy(x0).to(torch.float16)
+    x0_torch = torch.from_numpy(x0).to(torch.float32)
 
     for start in range(0, N, vae_bs):
         end = min(start + vae_bs, N)
