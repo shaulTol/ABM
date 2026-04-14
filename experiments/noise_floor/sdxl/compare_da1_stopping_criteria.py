@@ -117,6 +117,14 @@ def main():
     vae_bs = 4
     clip_bs = 16
 
+    # Reshape if flattened (N, 16384) → (N, 4, 64, 64)
+    if x0.ndim == 2:
+        latent_dim = x0.shape[1]
+        c = 4
+        hw = int(np.sqrt(latent_dim // c))
+        x0 = x0.reshape(N, c, hw, hw)
+        print(f"  Reshaped to {x0.shape}")
+
     print(f"VAE-decoding + CLIP-encoding {N} images...")
     all_embeddings = []
     x0_torch = torch.from_numpy(x0).to(torch.float16)
