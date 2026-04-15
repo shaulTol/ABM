@@ -4,15 +4,16 @@ Shared utilities for noise-floor-based DA lag selection.
 Two analytic bounds on the noise floor for C(τ) eigenvalues under the
 isotropic Gaussian null (dX = -½X dt + dW, stationary at N(0, σ²I)):
 
-Conservative (upper bound on noise):
-  λ_floor_upper(τ) = e^{-τ/2}·σ²·(1+√γ)² + σ²·(d/√N)·√(1-e^{-τ})
+Conservative (upper bound on noise, from Bai-Yin submultiplicativity):
+  λ_floor_upper(τ) = e^{-τ/2}·σ²·(1+√γ)² + σ²·(1+√γ)²·√(1-e^{-τ})
 
-Aggressive (lower bound on noise):
-  λ_floor_lower(τ) = e^{-τ/2}·σ²·(1+√γ)² + σ²·√γ·√(1-e^{-τ})
+Aggressive (lower bound on noise, from Frobenius norm):
+  λ_floor_lower(τ) = e^{-τ/2}·σ²·(1+√γ)² + σ²·√(d/N)·√(1-e^{-τ})
 
-where σ² = σ_f², γ = d/N, and the only difference is the second term:
-  upper: d/√N = √d·√γ    (grows with d)
-  lower: √(d/N) = √γ     (standard MP scaling)
+where σ² = σ_f², γ = d/N. Both terms share the MP bulk edge (1+√γ)²
+for the signal term; they differ only in the cross-product term:
+  upper: (1+√γ)²   (Bai-Yin, not tight but rigorous)
+  lower: √(d/N)    (Frobenius lower bound)
 """
 import numpy as np
 
@@ -21,14 +22,15 @@ def analytic_floor_upper(tau, sigma_f_sq, d, N):
     """
     Conservative (upper) noise floor — upper bound on noise eigenvalue.
 
-    λ_floor(τ) = e^{-τ/2}·σ²·(1+√γ)² + σ²·(d/√N)·√(1-e^{-τ})
+    λ_floor(τ) = e^{-τ/2}·σ²·(1+√γ)² + σ²·(1+√γ)²·√(1-e^{-τ})
     """
     tau = np.asarray(tau, dtype=float)
     gamma = d / N
     sqrt_gamma = np.sqrt(gamma)
+    mp_edge = (1 + sqrt_gamma) ** 2
     rho = np.exp(-tau / 2)
-    term1 = rho * sigma_f_sq * (1 + sqrt_gamma) ** 2
-    term2 = sigma_f_sq * (d / np.sqrt(N)) * np.sqrt(1 - np.exp(-tau))
+    term1 = rho * sigma_f_sq * mp_edge
+    term2 = sigma_f_sq * mp_edge * np.sqrt(1 - np.exp(-tau))
     return term1 + term2
 
 
@@ -41,8 +43,9 @@ def analytic_floor_lower(tau, sigma_f_sq, d, N):
     tau = np.asarray(tau, dtype=float)
     gamma = d / N
     sqrt_gamma = np.sqrt(gamma)
+    mp_edge = (1 + sqrt_gamma) ** 2
     rho = np.exp(-tau / 2)
-    term1 = rho * sigma_f_sq * (1 + sqrt_gamma) ** 2
+    term1 = rho * sigma_f_sq * mp_edge
     term2 = sigma_f_sq * sqrt_gamma * np.sqrt(1 - np.exp(-tau))
     return term1 + term2
 
