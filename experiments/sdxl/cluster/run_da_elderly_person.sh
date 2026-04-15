@@ -27,13 +27,13 @@ if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     # Elderly w=7.5
     PROMPT="a portrait of an elderly person"
     NAME="elderly_gs7p5"
-    CHECKPOINT="results_multiprompt_sweep/clip_da_latents_mp_p5_elderly_gs7p5.npz"
+    CHECKPOINT="results_multiprompt_sweep/langevin_ckpt_mp_p5_elderly_gs7p5.npz"
     RESUME_X0="results_multiprompt_sweep/gen_mp_p5_elderly_gs7p5_quick_x0.npz"
 elif [ "$SLURM_ARRAY_TASK_ID" -eq 1 ]; then
     # Person w=7.5
     PROMPT="a superrealistic professional photograph of a person"
     NAME="person_gs7p5"
-    CHECKPOINT="results_guidance_sweep/clip_da_latents_sweep_gs7p5.npz"
+    CHECKPOINT="results_guidance_sweep/langevin_ckpt_sweep_gs7p5.npz"
     RESUME_X0="results_guidance_sweep/gen_sweep_gs7p5_quick_x0.npz"
 fi
 
