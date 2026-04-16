@@ -35,9 +35,10 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Find all NPZ result files matching pattern
+    # Find all NPZ result files matching pattern (exclude latents files)
     npz_pattern = os.path.join(args.results_dir, f"clip_da_{args.pattern}.npz")
-    npz_files = sorted(glob.glob(npz_pattern))
+    npz_files = sorted(f for f in glob.glob(npz_pattern)
+                        if "latents_" not in os.path.basename(f))
     if not npz_files:
         print(f"No files matching {npz_pattern}")
         return
