@@ -88,9 +88,12 @@ def main():
         x0 = latents["x0"]
         print(f"  x0 shape: {x0.shape}")
 
-        # Embed through CLIP
-        print("  Embedding through CLIP...")
-        z0_clip = clip_embedder.embed(x0)
+        # Embed through CLIP — infer latent_shape from flattened dim
+        D = x0.shape[1]
+        h_lat = w_lat = int(np.sqrt(D // 4))
+        latent_shape = (4, h_lat, w_lat)
+        print(f"  Embedding through CLIP (latent_shape={latent_shape})...")
+        z0_clip = clip_embedder.embed(x0, latent_shape=latent_shape)
         print(f"  z0_clip shape: {z0_clip.shape}")
 
         # PCA

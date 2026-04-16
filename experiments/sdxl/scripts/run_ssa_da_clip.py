@@ -981,11 +981,11 @@ def main():
 
     print(f"\n=== Embedding x0 ({x0_np.shape[0]} samples) via real CLIP ===")
     t0 = time.time()
-    z0_clip = clip_embedder.embed(x0_np)  # (N, 768)
+    z0_clip = clip_embedder.embed(x0_np, latent_shape=latent_shape)  # (N, 768)
     print(f"  z0 embedded in {time.time() - t0:.1f}s, shape={z0_clip.shape}")
 
     # Determinism check (fp16 VAE has minor numerical noise, use atol=1e-3)
-    z0_check = clip_embedder.embed(x0_np[:1])
+    z0_check = clip_embedder.embed(x0_np[:1], latent_shape=latent_shape)
     max_diff = np.abs(z0_clip[:1] - z0_check).max()
     print(f"  Determinism check: max_diff={max_diff:.6f}", end="")
     if max_diff < 1e-3:
@@ -1000,7 +1000,7 @@ def main():
     for lag in snapshot_lags:
         if lag not in snapshots_np:
             continue
-        z_snap = clip_embedder.embed(snapshots_np[lag])
+        z_snap = clip_embedder.embed(snapshots_np[lag], latent_shape=latent_shape)
         z_snapshots[lag] = z_snap
         print(f"  lag={lag}: embedded, shape={z_snap.shape}")
     embed_time = time.time() - t0

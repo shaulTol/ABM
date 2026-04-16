@@ -104,10 +104,17 @@ class RealCLIPEmbedder:
 
     @torch.no_grad()
     def embed(self, latents_flat, latent_shape=(4, 64, 64), batch_size=None):
-        """(N, 16384) → (N, 768) L2-normalized CLIP embeddings. Returns numpy."""
+        """(N, D) → (N, 768) L2-normalized CLIP embeddings. Returns numpy."""
         if isinstance(latents_flat, np.ndarray):
             latents_flat = torch.from_numpy(latents_flat).float()
         N = latents_flat.shape[0]
+        D = latents_flat.shape[1]
+        expected_D = int(np.prod(latent_shape))
+        if D != expected_D:
+            raise ValueError(
+                f"RealCLIPEmbedder: latent dim {D} != prod(latent_shape) {expected_D}. "
+                f"latent_shape={latent_shape}. For 1024x1024 images use (4,128,128)."
+            )
         all_embs = []
 
         for start in range(0, N, self.vae_batch_size):
