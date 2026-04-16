@@ -1017,28 +1017,35 @@ def main():
     if args.clip_outlier_sigma is not None:
         z0_mean = z0_clip.mean(axis=0)
         dists = np.linalg.norm(z0_clip - z0_mean, axis=1)
-        threshold = args.clip_outlier_sigma * dists.std()
+        mean_dist = dists.mean()
+        std_dist = dists.std()
+        threshold = mean_dist + args.clip_outlier_sigma * std_dist
         good_mask = dists <= threshold
         n_removed = int((~good_mask).sum())
         outlier_indices = np.where(~good_mask)[0].tolist()
         print(f"\n=== Outlier removal: {n_removed}/{len(z0_clip)} removed "
-              f"(L2 > {args.clip_outlier_sigma}*sigma = {threshold:.4f}) ===")
+              f"(L2 > mean+{args.clip_outlier_sigma}*sigma = {mean_dist:.4f}+{args.clip_outlier_sigma}*{std_dist:.4f} = {threshold:.4f}) ===")
         if n_removed > 0:
             print(f"  Outlier indices: {outlier_indices}")
             print(f"  Outlier L2 distances: {dists[~good_mask].tolist()}")
 
-        z0_filtered = z0_clip[good_mask]
-        z_snaps_filtered = {lag: z[good_mask] for lag, z in z_snapshots.items()}
-        outlier_info = {
-            "n_outliers_removed": n_removed,
-            "outlier_indices": outlier_indices,
-            "outlier_sigma": args.clip_outlier_sigma,
-            "outlier_threshold": float(threshold),
-            "n_remaining": int(good_mask.sum()),
-        }
-        analysis_runs.append(
-            (z0_filtered, z_snaps_filtered, "_filtered", outlier_info)
-        )
+        if good_mask.sum() < 10:
+            print(f"  WARNING: Only {good_mask.sum()} samples remain after filtering, skipping filtered analysis")
+        else:
+            z0_filtered = z0_clip[good_mask]
+            z_snaps_filtered = {lag: z[good_mask] for lag, z in z_snapshots.items()}
+            outlier_info = {
+                "n_outliers_removed": n_removed,
+                "outlier_indices": outlier_indices,
+                "outlier_sigma": args.clip_outlier_sigma,
+                "outlier_threshold": float(threshold),
+                "outlier_mean_dist": float(mean_dist),
+                "outlier_std_dist": float(std_dist),
+                "n_remaining": int(good_mask.sum()),
+            }
+            analysis_runs.append(
+                (z0_filtered, z_snaps_filtered, "_filtered", outlier_info)
+            )
 
     # Text probe analyzer (shared across runs)
     print("\n=== Loading text probe analyzer ===")
