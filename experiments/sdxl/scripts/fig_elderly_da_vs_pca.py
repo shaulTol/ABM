@@ -133,7 +133,7 @@ def main():
 
     fig = plt.figure(figsize=(fig_w + 1, fig_h))
     gs = GridSpec(4, k + 1, figure=fig, hspace=0.15, wspace=0.05,
-                  left=0.01, right=0.99, top=0.88, bottom=0.02,
+                  left=0.01, right=0.99, top=0.98, bottom=0.02,
                   width_ratios=[0.6] + [1] * k)
 
     def place_row(row, indices, label_text):
@@ -152,19 +152,6 @@ def main():
     place_row(1, da1_low, "DA1\nlow")
     place_row(2, pc1_high, "PC1\nhigh")
     place_row(3, pc1_low, "PC1\nlow")
-
-    # Title
-    da1_str = ", ".join(f"{n} ({v['rho']:+.2f})" for n, v in da1_top3)
-    pc1_str = ", ".join(f"{n} ({v:+.2f})" for n, v in pc1_top3)
-    ssa = js.get("ssa_fixed20", 0)
-    gap = js.get("da1_gap", 0)
-    tau = js.get("da1_optimal_lag", 0)
-
-    title = (f'"a portrait of an elderly person" — DA1 vs PC1\n'
-             f'|cos(DA1,PC1)| = {cos_da1_pc1:.2f}   '
-             f'SSA = {ssa:.3f}   DA1 gap = {gap:.2f}x   τ* = {tau}\n'
-             f'DA1: {da1_str}   |   PC1: {pc1_str}')
-    fig.suptitle(title, fontsize=9, y=0.98)
 
     fig.savefig(args.output, dpi=200, bbox_inches="tight", facecolor="white")
     print(f"Saved: {args.output}")
