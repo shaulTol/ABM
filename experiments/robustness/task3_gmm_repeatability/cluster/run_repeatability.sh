@@ -24,7 +24,7 @@ export LD_LIBRARY_PATH=/sci/home/shaulytolk/.local/lib/python3.12/site-packages/
 export LD_LIBRARY_PATH=/sci/home/shaulytolk/.local/lib/python3.12/site-packages/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=/sci/labs/orzuk/shaulytolk/thesis_zuk_shaul/ssa_env/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH
 
-EXPDIR=/sci/labs/orzuk/shaulytolk/thesis_zuk_shaul/ssa-paper/experiments/robustness/task3_gmm_repeatability
+EXPDIR=/sci/labs/orzuk/shaulytolk/ABM/experiments/robustness/task3_gmm_repeatability
 cd $EXPDIR
 
 python -u gmm_repeatability.py --n_trajectories 10000 --subsample 1
