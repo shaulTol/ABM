@@ -7,7 +7,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from mixture_builders import build_bimodal_nd, build_ring_mixture, build_ring_fixed_distance
+from mixture_builders import build_bimodal_nd, build_ring_mixture, build_ring_fixed_distance, build_line_fixed_distance
 
 
 # --- 2D sweeps ---
@@ -22,7 +22,7 @@ def _build_nmodes_2d(k):
     return build_ring_mixture(n_modes=int(k), radius=3.0, variance=0.5, dim=2)
 
 def _build_nmodes_fixdist_2d(k):
-    return build_ring_fixed_distance(n_modes=int(k), distance=4.0, variance=0.5, dim=2)
+    return build_line_fixed_distance(n_modes=int(k), distance=4.0, variance=0.5, dim=2)
 
 def _build_nmodes_fixdist_10d(k):
     return build_ring_fixed_distance(n_modes=int(k), distance=4.0, variance=0.5, dim=10)
@@ -106,10 +106,10 @@ SWEEP_CONFIGS = [
     },
     {
         'name': 'nmodes_fixdist_2d',
-        'description': '2D Ring: Varying Modes (Fixed Distance=4.0)',
+        'description': '2D Line: Varying Modes (Fixed Distance=4.0)',
         'dim': 2,
         'param_name': 'Number of Modes',
-        'param_values': np.array([1, 2, 3, 4, 5, 6, 8]),
+        'param_values': np.array([1, 2, 3, 4, 5]),
         'build_mixture': _build_nmodes_fixdist_2d,
     },
     {

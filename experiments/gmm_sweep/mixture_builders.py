@@ -70,6 +70,20 @@ def build_random_gmm(dim, seed):
     return gm, metadata
 
 
+def build_line_fixed_distance(n_modes, distance=4.0, variance=0.5, dim=2):
+    """K modes on a line with fixed inter-mode distance.
+
+    Modes at positions 0, d, 2d, ..., (K-1)*d along dimension 0.
+    """
+    n_modes = int(n_modes)
+    means = torch.zeros(n_modes, dim)
+    for i in range(n_modes):
+        means[i, 0] = i * distance
+    covs = (variance * torch.eye(dim)).unsqueeze(0).expand(n_modes, -1, -1).clone()
+    weights = torch.ones(n_modes) / n_modes
+    return GaussianMixture(means, covs, weights, device='cpu')
+
+
 def build_ring_fixed_distance(n_modes, distance=4.0, variance=0.5, dim=2):
     """K modes on a circle with FIXED inter-mode distance (radius grows with k).
 
