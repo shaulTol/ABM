@@ -3,13 +3,19 @@ Synthetic baseline (Design A): factorized double-well metastable axes embedded
 in a higher-dimensional isotropic Gaussian background, with matched per-axis
 variance so PCA at tau=0 sees no preferred direction.
 
+A single random orthogonal Q is drawn at the start: planted directions are
+q_1 = Q e_1, ..., q_k = Q e_k. Under similarity invariance the eigenvalue
+distributions of Csym(tau) are identical regardless of Q, but Q removes any
+suggestion of an axis-aligned (sparse) signal assumption.
+
 Six panels:
     (a) tau = 0 spectrum: empirical vs analytic free-conv bulk; no spikes.
     (b) tau = tau* (auto-selected) spectrum: 20 spikes outside the bulk.
     (c) count(tau) vs tau, plateau detection, auto-selected tau*.
     (d) detected count vs N (sample-complexity / detection-threshold curve).
     (e) detected count vs k_planted (linearity, identity line).
-    (f) rotated frame: count(tau) overlap with unrotated, subspace alignment.
+    (f) subspace alignment of recovered top-k vs planted basis Q[:, :k]:
+        DA-at-lag-tau (rises with tau) vs PCA-equivalent (constant at chance).
 
 Run:
     python3 simulate_planted_spikes.py
@@ -34,10 +40,10 @@ matplotlib.rcParams["figure.dpi"] = 120
 # Score function for the factorized double-well + isotropic Gaussian energy.
 #   U(x) = sum_{i=1}^{k} V_meta(x_i; c, sigma_small)
 #        + sum_{i=k+1}^{d} x_i^2 / (2 sigma_iso^2)
+# Planted directions are rotated by Q applied externally.
 # ============================================================================
 
 def _score_factorized(X, c, sigma_small, sigma_iso, k):
-    """Score of the factorized double-well + iso-Gaussian energy on (N, d)."""
     s2 = sigma_small ** 2
     Z = X[:, :k]
     lp1 = -((Z - c) ** 2) / (2 * s2)
@@ -70,33 +76,30 @@ def _build_tau_grid(dt, tau_max, n_log=24):
     return [0] + steps
 
 
+def random_rotation(d, seed):
+    rng = np.random.default_rng(seed)
+    A = rng.standard_normal((d, d))
+    Q, _ = np.linalg.qr(A)
+    return Q
+
+
 # ============================================================================
-# Single simulation. Returns eigenvalues of the symmetrized lag-tau
-# autocovariance at each lag in tau_steps, and the top-k eigenvectors at the
-# largest lag (used for the rotation-invariance subspace check).
+# Single simulation. Returns eigenvalues at each lag; optionally returns the
+# top-k eigenvectors of Csym(tau) at every lag (for subspace alignment).
 # ============================================================================
 
 def simulate(
     d, k, c, sigma_small, N, dt, tau_steps, seed,
-    rotation: np.ndarray | None = None,
-    return_top_eigvecs: bool = False,
+    rotation: np.ndarray,
+    return_top_eigvecs_all_lags: bool = False,
 ):
-    """Run the canonical diffusion and return eigenvalues at each lag.
-
-    rotation : optional orthogonal d x d matrix Q. The score and initial
-    samples are evaluated in the rotated frame: planted directions are
-    Q e_1, ..., Q e_k. If None, planted directions are coordinate axes.
-    """
     sigma_iso = float(np.sqrt(c ** 2 + sigma_small ** 2))
     sigma_f_sq = c ** 2 + sigma_small ** 2
     sigma_f = float(np.sqrt(sigma_f_sq))
 
     rng = np.random.default_rng(seed)
     X_fact = _sample_initial(N, d, k, c, sigma_small, sigma_iso, rng)
-    if rotation is not None:
-        X = X_fact @ rotation.T  # rows are samples; rotate each sample
-    else:
-        X = X_fact
+    X = X_fact @ rotation.T   # samples in rotated frame
 
     snapshots: dict[int, np.ndarray] = {0: X.copy()}
     n_steps = max(tau_steps)
@@ -104,12 +107,9 @@ def simulate(
     drift_pref = 0.5 * sigma_f_sq
 
     for t in range(1, n_steps + 1):
-        if rotation is not None:
-            X_in_fact = X @ rotation  # = Q^T y
-            grad_fact = _score_factorized(X_in_fact, c, sigma_small, sigma_iso, k)
-            grad = grad_fact @ rotation.T
-        else:
-            grad = _score_factorized(X, c, sigma_small, sigma_iso, k)
+        X_in_fact = X @ rotation        # = Q^T y, into factorized frame
+        grad_fact = _score_factorized(X_in_fact, c, sigma_small, sigma_iso, k)
+        grad = grad_fact @ rotation.T   # back to rotated frame
         Z = rng.standard_normal((N, d))
         X = X + drift_pref * grad * dt + sigma_f * sqrt_dt * Z
         if t in tau_steps:
@@ -118,51 +118,42 @@ def simulate(
     mu_f = np.zeros(d)
     X0c = snapshots[0] - mu_f
     eigs_by_tau: dict[float, np.ndarray] = {}
-    top_eigvecs = None
-    last_step = max(tau_steps)
+    topvecs_by_tau: dict[float, np.ndarray] = {}
     for ts in tau_steps:
         Xtc = snapshots[ts] - mu_f
         C = (Xtc.T @ X0c) / N
         Csym = 0.5 * (C + C.T)
-        if return_top_eigvecs and ts == last_step:
+        if return_top_eigvecs_all_lags:
             evals, evecs = np.linalg.eigh(Csym)
             order = np.argsort(evals)[::-1]
             eigs_by_tau[round(ts * dt, 6)] = evals[order]
-            top_eigvecs = evecs[:, order[:k]]
+            topvecs_by_tau[round(ts * dt, 6)] = evecs[:, order[:k]]
         else:
             eigs = np.sort(np.linalg.eigvalsh(Csym))[::-1]
             eigs_by_tau[round(ts * dt, 6)] = eigs
 
     return {
         "eigs_by_tau": eigs_by_tau,
+        "topvecs_by_tau": topvecs_by_tau,
         "sigma_f": sigma_f,
         "gamma": d / N,
-        "d": d,
-        "N": N,
-        "k": k,
-        "top_eigvecs": top_eigvecs,
+        "d": d, "N": N, "k": k,
     }
 
 
 def count_curve(eigs_by_tau, sigma_f, gamma):
-    taus = []
-    counts = []
-    edges_lp = []
+    taus, counts = [], []
     for tau, eigs in eigs_by_tau.items():
         if tau == 0.0:
             _, lp = edge_tau0(sigma_f, gamma)
         else:
             _, lp = fc_edges(tau, sigma=sigma_f, gamma=gamma)
         taus.append(tau)
-        edges_lp.append(lp)
         counts.append(int(np.sum(eigs > lp)))
-    return np.array(taus), np.array(counts), np.array(edges_lp)
+    return np.array(taus), np.array(counts)
 
 
 def auto_select_tau_star(taus, counts):
-    """Plateau rule: pick the largest count value, take the largest tau where
-    count attains it. Matches the paper's 'largest tau where top-m exceeds
-    lambda_+' criterion with m made an output rather than an input."""
     plateau_count = int(counts.max())
     if plateau_count == 0:
         return float(taus[-1]), 0
@@ -170,17 +161,22 @@ def auto_select_tau_star(taus, counts):
     return float(taus[on_plateau].max()), plateau_count
 
 
+def subspace_alignment(V_topk: np.ndarray, planted: np.ndarray) -> float:
+    """Squared Frobenius norm of V^T planted, divided by k."""
+    return float(np.linalg.norm(V_topk.T @ planted, ord="fro") ** 2 / planted.shape[1])
+
+
 # ============================================================================
-# Sweeps
+# Sweeps (always rotated; eigenvalue distributions invariant under Q)
 # ============================================================================
 
-def sweep_N(d, k, c, sigma_small, dt, tau_max, N_values, seed=0):
-    """For each N, run the simulation and return the auto-detected count."""
+def sweep_N(d, k, c, sigma_small, dt, tau_max, N_values, rotation, seed=0):
     out = []
     for i, N in enumerate(N_values):
         tau_steps = _build_tau_grid(dt, tau_max)
-        res = simulate(d, k, c, sigma_small, N, dt, tau_steps, seed=seed + i)
-        taus, counts, _ = count_curve(res["eigs_by_tau"], res["sigma_f"], res["gamma"])
+        res = simulate(d, k, c, sigma_small, N, dt, tau_steps,
+                       seed=seed + i, rotation=rotation)
+        taus, counts = count_curve(res["eigs_by_tau"], res["sigma_f"], res["gamma"])
         tau_star, m_hat = auto_select_tau_star(taus, counts)
         print(f"  N={N:>5d}  gamma={res['gamma']:.3f}  tau*={tau_star:.2f}  "
               f"detected count = {m_hat:>3d}  (truth k={k})")
@@ -188,12 +184,16 @@ def sweep_N(d, k, c, sigma_small, dt, tau_max, N_values, seed=0):
     return out
 
 
-def sweep_k(d, c, sigma_small, N, dt, tau_max, k_values, seed=0):
+def sweep_k(d, c, sigma_small, N, dt, tau_max, k_values, rotation_seed=999, seed=0):
+    """Note: each k uses a fresh random rotation (different planted subspace)."""
     out = []
+    d_eff = d
     for i, k in enumerate(k_values):
+        Q = random_rotation(d_eff, seed=rotation_seed + i)
         tau_steps = _build_tau_grid(dt, tau_max)
-        res = simulate(d, k, c, sigma_small, N, dt, tau_steps, seed=seed + i)
-        taus, counts, _ = count_curve(res["eigs_by_tau"], res["sigma_f"], res["gamma"])
+        res = simulate(d_eff, k, c, sigma_small, N, dt, tau_steps,
+                       seed=seed + i, rotation=Q)
+        taus, counts = count_curve(res["eigs_by_tau"], res["sigma_f"], res["gamma"])
         tau_star, m_hat = auto_select_tau_star(taus, counts)
         print(f"  k_planted={k:>3d}  tau*={tau_star:.2f}  "
               f"detected count = {m_hat:>3d}")
@@ -201,37 +201,11 @@ def sweep_k(d, c, sigma_small, N, dt, tau_max, k_values, seed=0):
     return out
 
 
-def run_rotated(d, k, c, sigma_small, N, dt, tau_max, seed=0):
-    """Random rotation of the planted basis; check that count(tau) and the
-    top-k subspace match the unrotated result."""
-    rng = np.random.default_rng(1234 + seed)
-    A = rng.standard_normal((d, d))
-    Q, _ = np.linalg.qr(A)
-    tau_steps = _build_tau_grid(dt, tau_max)
-    res = simulate(d, k, c, sigma_small, N, dt, tau_steps, seed=seed,
-                   rotation=Q, return_top_eigvecs=True)
-    taus, counts, _ = count_curve(res["eigs_by_tau"], res["sigma_f"], res["gamma"])
-    tau_star, m_hat = auto_select_tau_star(taus, counts)
-
-    # Subspace alignment: Frobenius norm of projection of planted basis onto
-    # recovered top-k subspace, divided by k. =1 iff perfect recovery.
-    planted = Q[:, :k]  # d x k
-    V = res["top_eigvecs"]  # d x k
-    align = float(np.linalg.norm(V.T @ planted, ord="fro") ** 2 / k)
-    print(f"  rotated: tau*={tau_star:.2f}  detected count={m_hat}  "
-          f"subspace alignment = {align:.4f}")
-    return {
-        "taus": taus, "counts": counts, "tau_star": tau_star,
-        "m_hat": m_hat, "alignment": align,
-    }
-
-
 # ============================================================================
 # Main: 6-panel figure
 # ============================================================================
 
 def main(out_path: Path | None = None):
-    # Baseline config
     d = 200
     k = 20
     c = 3.0
@@ -240,33 +214,48 @@ def main(out_path: Path | None = None):
     dt = 0.005
     tau_max = 10.0
 
+    # Single random rotation Q for the baseline + sample-complexity sweep.
+    # The k_planted sweep uses fresh Q's per k (since the planted subspace
+    # dimension changes with k anyway).
+    Q = random_rotation(d, seed=1234)
+    Q_planted = Q[:, :k]   # d x k planted basis
+
     print("=" * 70)
-    print("baseline run")
+    print("baseline run (random rotation Q)")
     print("=" * 70)
     tau_steps = _build_tau_grid(dt, tau_max)
-    res = simulate(d, k, c, sigma_small, N, dt, tau_steps, seed=0)
-    taus, counts, edges_lp = count_curve(res["eigs_by_tau"], res["sigma_f"], res["gamma"])
+    res = simulate(d, k, c, sigma_small, N, dt, tau_steps, seed=0,
+                   rotation=Q, return_top_eigvecs_all_lags=True)
+    taus, counts = count_curve(res["eigs_by_tau"], res["sigma_f"], res["gamma"])
     tau_star, m_hat = auto_select_tau_star(taus, counts)
     sigma_f = res["sigma_f"]
     gamma = res["gamma"]
-    print(f"baseline: tau*={tau_star:.2f}, detected count={m_hat}, planted k={k}")
+    print(f"  tau*={tau_star:.2f}, detected count={m_hat}, planted k={k}")
+
+    # Subspace alignment vs tau, for both DA (top-k of Csym(tau)) and PCA
+    # (top-k of Csym(0), which is tau=0 sample covariance, i.e. constant in tau).
+    pca_topk = res["topvecs_by_tau"][0.0]
+    pca_align = subspace_alignment(pca_topk, Q_planted)
+    da_align_by_tau = []
+    for tau in taus:
+        V = res["topvecs_by_tau"][float(tau)]
+        da_align_by_tau.append(subspace_alignment(V, Q_planted))
+    da_align_by_tau = np.array(da_align_by_tau)
+    print(f"  subspace alignment: PCA={pca_align:.3f}, "
+          f"DA@tau*={da_align_by_tau[-1]:.3f}, "
+          f"random-baseline = k/d = {k/d:.3f}")
 
     print("\n" + "=" * 70)
     print("sweep over N")
     print("=" * 70)
     N_values = [200, 300, 500, 750, 1000, 1500, 2000, 3000, 5000]
-    sweep_N_out = sweep_N(d, k, c, sigma_small, dt, tau_max, N_values, seed=10)
+    sweep_N_out = sweep_N(d, k, c, sigma_small, dt, tau_max, N_values, Q, seed=10)
 
     print("\n" + "=" * 70)
-    print("sweep over k_planted")
+    print("sweep over k_planted (fresh random rotation per k)")
     print("=" * 70)
     k_values = [5, 10, 20, 40, 80]
     sweep_k_out = sweep_k(d, c, sigma_small, N, dt, tau_max, k_values, seed=20)
-
-    print("\n" + "=" * 70)
-    print("rotated frame")
-    print("=" * 70)
-    rot = run_rotated(d, k, c, sigma_small, N, dt, tau_max, seed=30)
 
     # ------------------------------------------------------------------------
     # Assemble 6-panel figure
@@ -360,26 +349,28 @@ def main(out_path: Path | None = None):
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
 
-    # (f) rotated frame: count overlap + subspace alignment annotation
+    # (f) DA vs PCA subspace alignment with the planted basis Q[:, :k]
     ax = axes[1, 2]
-    ax.plot(taus, counts, "o-", color="C0", lw=1.6, markersize=4,
-            label="unrotated (axis-aligned)", alpha=0.85)
-    ax.plot(rot["taus"], rot["counts"], "s--", color="C1", lw=1.6,
-            markersize=4, label="random rotation $Q$", alpha=0.85)
-    ax.axhline(k, color="crimson", linestyle="--", lw=1.4,
-               label=fr"planted truth $k={k}$")
+    ax.plot(taus, da_align_by_tau, "o-", color="C0", lw=1.6, markersize=5,
+            label="DA (top-k of $\\hat C_{\\rm sym}(\\tau)$)")
+    ax.axhline(pca_align, color="C1", linestyle="-", lw=1.6,
+               label=fr"PCA (top-k of $\hat C(0)$) $= {pca_align:.2f}$")
+    ax.axhline(k / d, color="gray", linestyle=":", lw=1.2,
+               label=fr"chance $= k/d = {k/d:.2f}$")
+    ax.axhline(1.0, color="crimson", linestyle="--", lw=1.0, alpha=0.5,
+               label="perfect $= 1$")
     ax.set_xscale("symlog", linthresh=max(2.0 * dt, 0.05))
     ax.set_xlabel(r"$\tau$ (lag, symlog)")
-    ax.set_ylabel(r"$\#\{\lambda_j > \lambda_+(\tau)\}$")
-    ax.set_title(rf"(f) rotation invariance "
-                 rf"(subspace alignment $={rot['alignment']:.3f}$)")
-    ax.legend(fontsize=8)
+    ax.set_ylabel(r"subspace alignment with $Q[:,:k]$")
+    ax.set_title("(f) DA recovers planted subspace; PCA stays at chance")
+    ax.set_ylim(-0.05, 1.05)
+    ax.legend(fontsize=8, loc="best")
     ax.grid(True, alpha=0.3)
 
     fig.suptitle(
         rf"Synthetic planted-spike validation: $d={d}$, $k={k}$, "
         rf"$\gamma=d/N={gamma:.2f}$, $c={c}$, $\sigma_s={sigma_small}$, "
-        rf"matched per-axis variance",
+        rf"matched per-axis variance, planted basis $Q[:,:k]$ (random rotation)",
         y=1.005, fontsize=11,
     )
     fig.tight_layout()
