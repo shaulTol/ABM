@@ -10,10 +10,15 @@ Provides:
 """
 
 import os
+import sys
 import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
+
+# Allow imports from project root
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+from src.metrics.autocorrelation import aggregate_ssa
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +156,7 @@ class RealCLIPEmbedder:
 # ---------------------------------------------------------------------------
 
 def compute_ssa_da(z0, z_snapshots, lags, n_eigvals=10, n_eigvecs=3,
-                   ssa_min_lag=0, ssa_only=False):
+                   ssa_min_lag=0, ssa_only=False, dt=None):
     """Compute SSA and DA from pre-computed embeddings (any dimension).
 
     Args:
@@ -219,14 +224,18 @@ def compute_ssa_da(z0, z_snapshots, lags, n_eigvals=10, n_eigvecs=3,
 
     rho_sq = np.array(rho_sq_list)
 
-    # SSA: optionally filter by ssa_min_lag
-    used_lags_arr = np.array(used_lags)
+    # SSA: Ŝ = ∫ ρ²(τ) dτ (Riemann sum in physical time, truncated at noise floor)
+    used_lags_arr = np.array(used_lags, dtype=float)
     mask = used_lags_arr >= ssa_min_lag
+
+    # Convert step-lags to physical time for correct integration
+    phys_lags = used_lags_arr * dt if dt is not None else used_lags_arr
+
     if mask.any():
-        ssa = float(np.mean(rho_sq[mask]))
+        ssa = aggregate_ssa(rho_sq[mask], lags=phys_lags[mask])
     else:
-        ssa = float(np.mean(rho_sq))
-    ssa_all = float(np.mean(rho_sq))  # unfiltered for reference
+        ssa = aggregate_ssa(rho_sq, lags=phys_lags)
+    ssa_all = aggregate_ssa(rho_sq, lags=phys_lags)  # unfiltered for reference
 
     result = {
         "ssa": ssa,

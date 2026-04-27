@@ -288,39 +288,74 @@ def compute_vector_autocorrelation(
     return rho, mu_f, cov_f
 
 
+def aggregate_ssa(rho_sq, dt=None, lags=None, normalize='riemann'):
+    """
+    Shared SSA aggregation from per-lag ρ² values.
+
+    Two modes:
+      'riemann' (default): Ŝ = ∫ ρ(τ)² dτ  — numerical integration
+      'mean':              S = (1/L) × Σ ρ(ℓ)²  — simple mean (legacy)
+
+    For 'riemann', provide either:
+      - dt (scalar): uniform spacing, uses rectangle rule Ŝ = Δt × Σ ρ²
+      - lags (array): non-uniform spacing, uses trapezoidal rule
+
+    Args:
+        rho_sq: array-like of ρ(ℓ)² values (lag 0 should already be excluded).
+        dt: time step Δt for uniform spacing.
+        lags: array of lag values for non-uniform spacing (same length as rho_sq).
+        normalize: 'riemann' or 'mean'.
+
+    Returns:
+        SSA score (float).
+    """
+    import numpy as np
+    rho_sq = np.asarray(rho_sq, dtype=float)
+    if len(rho_sq) == 0:
+        return 0.0
+    if normalize == 'riemann':
+        if lags is not None:
+            lags = np.asarray(lags, dtype=float)
+            _trapz = getattr(np, 'trapezoid', getattr(np, 'trapz', None))
+            return float(_trapz(rho_sq, lags))
+        elif dt is not None:
+            return float(dt * rho_sq.sum())
+        else:
+            # Fallback to mean if dt/lags not provided (backward compat)
+            return float(rho_sq.mean())
+    elif normalize == 'mean':
+        return float(rho_sq.mean())
+    else:
+        raise ValueError(f"Unknown normalize mode: {normalize!r}. Use 'riemann' or 'mean'.")
+
+
 def compute_ssa_score(
     trajectories: torch.Tensor,
     max_lag: int,
-    exclude_zero_lag: bool = True
+    exclude_zero_lag: bool = True,
+    dt: float = None,
+    normalize: str = 'riemann'
 ) -> Tuple[float, torch.Tensor]:
     """
-    Compute Sum of Squared Autocorrelations (SSA) score, normalized by number of lags.
-
-    S = (1/L) * Σ_{ℓ=1}^{L} ρ(ℓ)²
-
-    This is the mean squared autocorrelation, making the score comparable
-    across different max_lag settings.
+    Compute Sum of Squared Autocorrelations (SSA) score.
 
     Args:
         trajectories: (N, T+1) tensor of position trajectories
         max_lag: Maximum lag L
         exclude_zero_lag: Whether to exclude ρ(0) from the sum (standard)
+        dt: Time step (required for normalize='riemann')
+        normalize: 'riemann' (default) or 'mean' (legacy)
 
     Returns:
-        S: SSA score (scalar), normalized by number of lags
+        S: SSA score (scalar)
         rho: (max_lag+1,) autocorrelation function
     """
     # Compute autocorrelation function
     rho, mu, sigma = compute_autocorrelation(trajectories, max_lag, demean=True)
-    
-    # Compute SSA score (normalized by number of lags)
-    if exclude_zero_lag:
-        n_lags = max_lag  # lags 1 to L
-        S = (rho[1:] ** 2).sum().item() / n_lags
-    else:
-        n_lags = max_lag + 1  # lags 0 to L
-        S = (rho ** 2).sum().item() / n_lags
-    
+
+    rho_sq = (rho[1:] ** 2).numpy() if exclude_zero_lag else (rho ** 2).numpy()
+    S = aggregate_ssa(rho_sq, dt=dt, normalize=normalize)
+
     return S, rho
 
 
@@ -331,16 +366,12 @@ def compute_vector_ssa_score(
     gmm_covs: torch.Tensor,
     gmm_weights: torch.Tensor,
     exclude_zero_lag: bool = True,
-    normalization: str = 'whitened'
+    normalization: str = 'whitened',
+    dt: float = None,
+    normalize: str = 'riemann'
 ) -> Tuple[float, torch.Tensor]:
     """
-    Compute Sum of Squared Autocorrelations (SSA) score for vector trajectories,
-    normalized by number of lags.
-
-    S = (1/L) * Σ_{ℓ=1}^{L} ρ(ℓ)²
-
-    This is the mean squared autocorrelation, making the score comparable
-    across different max_lag settings.
+    Compute Sum of Squared Autocorrelations (SSA) score for vector trajectories.
 
     Args:
         trajectories: (N, T+1, d) tensor of d-dimensional position trajectories
@@ -350,25 +381,22 @@ def compute_vector_ssa_score(
         gmm_weights: (k,) GMM weights (required)
         exclude_zero_lag: Whether to exclude ρ(0) from the sum (standard)
         normalization: 'whitened' or 'trace' (default: 'whitened')
+        dt: Time step (required for normalize='riemann')
+        normalize: 'riemann' (default) or 'mean' (legacy)
 
     Returns:
-        S: SSA score (scalar), normalized by number of lags
+        S: SSA score (scalar)
         rho: (max_lag+1,) autocorrelation function
     """
     # Compute autocorrelation function
     rho, mu_f, cov_f = compute_vector_autocorrelation(
-        trajectories, max_lag, gmm_means, gmm_covs, gmm_weights, 
+        trajectories, max_lag, gmm_means, gmm_covs, gmm_weights,
         demean=True, normalization=normalization
     )
-    
-    # Compute SSA score (normalized by number of lags)
-    if exclude_zero_lag:
-        n_lags = max_lag  # lags 1 to L
-        S = (rho[1:] ** 2).sum().item() / n_lags
-    else:
-        n_lags = max_lag + 1  # lags 0 to L
-        S = (rho ** 2).sum().item() / n_lags
-    
+
+    rho_sq = (rho[1:] ** 2).numpy() if exclude_zero_lag else (rho ** 2).numpy()
+    S = aggregate_ssa(rho_sq, dt=dt, normalize=normalize)
+
     return S, rho
 
 

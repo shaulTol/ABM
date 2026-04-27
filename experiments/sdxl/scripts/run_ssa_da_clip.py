@@ -300,11 +300,12 @@ def run_stages_1_2(args, output_dir, device, latent_shape, use_controlnet):
             "var_f": np.array(var_f),
             "gen_time": np.array(gen_time),
             "langevin_time": np.array(langevin_time),
+            "snapshot_dtype_on_disk": np.array("float16"),
         }
         for lag, snap in snapshots.items():
-            ckpt_data[f"snapshot_{lag}"] = snap.numpy()
+            ckpt_data[f"snapshot_{lag}"] = snap.numpy().astype(np.float16)
         np.savez_compressed(ckpt_path, **ckpt_data)
-        print(f"  Saved Langevin checkpoint: {ckpt_path}")
+        print(f"  Saved Langevin checkpoint (snapshots fp16): {ckpt_path}")
     else:
         print("  Skipping checkpoint save (--no_save_checkpoint)")
 
@@ -491,11 +492,12 @@ def run_stages_1_2_resume_x0(args, output_dir, device, latent_shape, use_control
             "var_f": np.array(var_f),
             "gen_time": np.array(gen_time),
             "langevin_time": np.array(langevin_time),
+            "snapshot_dtype_on_disk": np.array("float16"),
         }
         for lag, snap in snapshots.items():
-            ckpt_data[f"snapshot_{lag}"] = snap.numpy()
+            ckpt_data[f"snapshot_{lag}"] = snap.numpy().astype(np.float16)
         np.savez_compressed(ckpt_path, **ckpt_data)
-        print(f"  Saved Langevin checkpoint: {ckpt_path}")
+        print(f"  Saved Langevin checkpoint (snapshots fp16): {ckpt_path}")
     else:
         print("  Skipping checkpoint save (--no_save_checkpoint)")
 
@@ -530,7 +532,8 @@ def _run_analysis(
     print(f"\n=== Computing SSA{'' if args.ssa_only else ' + DA'} in CLIP space (768D) ===")
     t0 = time.time()
     results = compute_ssa_da(z0_clip, z_snapshots, snapshot_lags,
-                             ssa_min_lag=args.ssa_min_lag, ssa_only=args.ssa_only)
+                             ssa_min_lag=args.ssa_min_lag, ssa_only=args.ssa_only,
+                             dt=args.dt)
     ssa_time = time.time() - t0
     print(f"  SSA{'' if args.ssa_only else '+DA'} computed in {ssa_time:.1f}s")
 
@@ -685,7 +688,7 @@ def _run_analysis(
         for lag in snapshot_lags:
             if lag in snapshots_np:
                 z_snaps_lc[lag] = lc_embedder.embed(snapshots_np[lag])
-        lc_results = compute_ssa_da(z0_lc, z_snaps_lc, snapshot_lags)
+        lc_results = compute_ssa_da(z0_lc, z_snaps_lc, snapshot_lags, dt=args.dt)
 
         from scipy.stats import spearmanr
         da1_clip_scores = (z0_clip - results["mu"]) @ results["da1_eigvec"]
@@ -785,8 +788,31 @@ def _run_analysis(
         fixed_lags = list(range(20, args.T + 1, 20))
         log_mask = np.isin(used_lags, log_lags)
         fixed_mask = np.isin(used_lags, fixed_lags)
+        # Ŝ = Δt × Σ ρ² (Riemann sum, truncated at noise floor 1/N)
+        N = args.n_samples
+        nf = 1.0 / N
+        delta_fixed20 = 20 * args.dt
+        if fixed_mask.any():
+            rho_f20 = rho_sq[fixed_mask]
+            lags_f20 = used_lags[fixed_mask]
+            below_nf = rho_f20 < nf
+            if below_nf.any():
+                trunc_idx = np.argmax(below_nf)
+                shat_fixed20 = float(delta_fixed20 * rho_f20[:trunc_idx].sum())
+                tau_star_fixed20 = float(lags_f20[trunc_idx] * args.dt)
+                hit_floor_fixed20 = True
+            else:
+                shat_fixed20 = float(delta_fixed20 * rho_f20.sum())
+                tau_star_fixed20 = float(lags_f20[-1] * args.dt)
+                hit_floor_fixed20 = False
+        else:
+            shat_fixed20 = None
+            tau_star_fixed20 = None
+            hit_floor_fixed20 = None
         json_results["ssa_log"] = float(np.mean(rho_sq[log_mask])) if log_mask.any() else None
-        json_results["ssa_fixed20"] = float(np.mean(rho_sq[fixed_mask])) if fixed_mask.any() else None
+        json_results["ssa_fixed20"] = shat_fixed20
+        json_results["tau_star_fixed20"] = tau_star_fixed20
+        json_results["hit_floor_fixed20"] = hit_floor_fixed20
         json_results["rho_sq_all"] = rho_sq.tolist()
         json_results["snapshot_lags_all"] = used_lags.tolist()
         json_results["log_lags"] = log_lags

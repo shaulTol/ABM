@@ -262,7 +262,8 @@ def full_autocorrelation(
             gmm_means=gmm_means,
             gmm_covs=gmm_covs,
             gmm_weights=gmm_weights,
-            normalization=normalization
+            normalization=normalization,
+            dt=dt
         )
         
         if verbose:

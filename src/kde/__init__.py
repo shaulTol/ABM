@@ -9,7 +9,6 @@ The main entry point is `autocorrelation_score()`.
 
 from .kde_estimator import KernelDensityEstimate
 from .kde_score import KDEScore
-from .autocorrelation_score import autocorrelation_score
 
-__all__ = ['KernelDensityEstimate', 'KDEScore', 'autocorrelation_score']
+__all__ = ['KernelDensityEstimate', 'KDEScore']
 

@@ -23,7 +23,11 @@ CLASS_COLORS = {
 }
 
 def load_dry_bean():
-    """Load dry bean dataset — reuses logic from interpret_winners.py."""
+    """Load dry bean dataset. Prefer npz (no pandas dependency)."""
+    npz_path = os.path.join(OUTDIR, 'data', 'dry_bean.npz')
+    if os.path.exists(npz_path):
+        d = np.load(npz_path, allow_pickle=True)
+        return d['X'].astype(float), d['labels'], list(d['feature_cols'])
     import pandas as pd
     path = os.path.join(OUTDIR, 'data', 'DryBeanDataset', 'Dry_Bean_Dataset.xlsx')
     if not os.path.exists(path):
@@ -52,7 +56,7 @@ def backproject(X_raw, da1_pca, max_dim=8):
     return X_s, da1_orig, pc1_orig, proj_da1, proj_pc1
 
 
-def page_title(pdf, X_full, labels_str, feature_cols):
+def page_title(pdf, X_full, labels_str, feature_cols, cos_val, gap, opt_lag):
     """Page 1: Title + Dataset Overview."""
     fig, ax = plt.subplots(figsize=(8.5, 11))
     ax.axis('off')
@@ -60,20 +64,25 @@ def page_title(pdf, X_full, labels_str, feature_cols):
     # Title
     ax.text(0.5, 0.95, 'DA vs PCA on the Dry Bean Dataset', fontsize=20, fontweight='bold',
             ha='center', va='top', transform=ax.transAxes)
-    ax.text(0.5, 0.91, 'Diffusion-Autocorrelation finds size mode that PCA misses',
+    ax.text(0.5, 0.91, 'A converged slow mode driven by the BOMBAY size outlier',
             fontsize=12, ha='center', va='top', color='#555555', transform=ax.transAxes)
 
     # Dataset description
     desc = (
         f"The UCI Dry Bean dataset contains {len(X_full):,} samples of 7 bean varieties,\n"
         f"described by {len(feature_cols)} morphological features extracted from images.\n"
-        f"For the DA computation, 2,000 samples were subsampled (seed=42).\n\n"
-        f"Key finding: DA1 captures absolute bean size (Area, ConvexArea),\n"
-        f"separating the physically large BOMBAY variety from all others.\n"
-        f"PC1 instead captures elongation/shape (ShapeFactor2, ShapeFactor4).\n"
-        f"The two directions are nearly orthogonal: |cos(DA1, PC1)| = 0.13."
+        f"For the DA computation, 2,000 samples were subsampled (seed=42) and\n"
+        f"reduced to 8 principal components (99.9% variance retained).\n\n"
+        f"KDE-driven Langevin dynamics were simulated for up to 262,144 steps\n"
+        f"(dt=0.1) on the GPU. The spectral gap λ₁/λ₂ peaks at lag τ*={opt_lag}\n"
+        f"with gap={gap:.2f}, then decays as autocorrelation dies.\n\n"
+        f"Key finding: DA1 captures a size-related slow mode (Area, ConvexArea,\n"
+        f"EquivDiameter, Perimeter) dominated by the giant BOMBAY beans.\n"
+        f"DA1 is rotated ~36° from PC1 in the 8D PCA space; |cos(DA1,PC1)| = {cos_val:.2f}\n"
+        f"in the original 16D feature space. The two directions share substantial\n"
+        f"support on size features but differ in their weighting."
     )
-    ax.text(0.08, 0.80, desc, fontsize=11, va='top', transform=ax.transAxes,
+    ax.text(0.08, 0.84, desc, fontsize=10, va='top', transform=ax.transAxes,
             family='monospace', linespacing=1.5)
 
     # Class table
@@ -87,7 +96,7 @@ def page_title(pdf, X_full, labels_str, feature_cols):
 
     table = ax.table(cellText=rows,
                      colLabels=['Class', 'N', 'Mean Area', 'Mean MajorAxis'],
-                     loc='center', bbox=[0.1, 0.18, 0.8, 0.35])
+                     loc='center', bbox=[0.1, 0.12, 0.8, 0.32])
     table.auto_set_font_size(False)
     table.set_fontsize(10)
 
@@ -177,42 +186,55 @@ def page_loadings(pdf, da1_orig, pc1_orig, feature_cols):
     ax2.set_title('DA1 loadings', fontsize=12)
     ax2.axvline(0, color='k', lw=0.5)
 
-    fig.suptitle('Feature loadings: PC1 (shape) vs DA1 (size)', fontsize=13, y=0.98)
+    fig.suptitle('Feature loadings: PC1 vs DA1 (both size-dominated, different weightings)',
+                 fontsize=12, y=0.98)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     pdf.savefig(fig)
     plt.close(fig)
 
 
-def page_gap_profile(pdf, profile_path):
-    """Page 5: Gap profile and angle vs lag."""
+def page_gap_profile(pdf, profile_path, opt_lag):
+    """Page 5: Gap profile and angle vs lag (full extended profile)."""
     d = np.load(profile_path)
     checkpoints = d['checkpoints']
     gap_profile = d['gap_profile']
     angles_deg = d['angles_deg']
+    evecs = d['leading_eigenvectors']  # (n_cp, d)
+
+    # Direction stability: cos between consecutive DA1's
+    consecutive_cos = np.abs(np.sum(evecs[1:] * evecs[:-1], axis=1))
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 5))
 
     # Gap vs lag
     ax1.semilogx(checkpoints, gap_profile, 'o-', color='darkred', markersize=5)
-    ax1.set_xlabel('Lag', fontsize=11)
+    ax1.set_xlabel('Lag (steps, dt=0.1)', fontsize=11)
     ax1.set_ylabel('Gap (λ₁/λ₂)', fontsize=11)
     ax1.set_title('Spectral gap profile', fontsize=12)
-    ax1.axhline(gap_profile[-1], color='darkred', ls='--', alpha=0.3)
-    ax1.text(checkpoints[-1]*0.5, gap_profile[-1]+0.2, f'gap = {gap_profile[-1]:.2f}',
-             fontsize=9, ha='right', color='darkred')
+    ax1.axvline(opt_lag, color='darkgreen', ls='--', alpha=0.7,
+                label=f'optimal τ*={opt_lag}')
+    peak_gap = gap_profile[list(checkpoints).index(opt_lag)]
+    ax1.annotate(f'peak gap = {peak_gap:.2f}', xy=(opt_lag, peak_gap),
+                 xytext=(opt_lag*0.1, peak_gap*0.9),
+                 fontsize=10, color='darkgreen',
+                 arrowprops=dict(arrowstyle='->', color='darkgreen'))
+    ax1.legend(fontsize=9)
     ax1.grid(True, alpha=0.3)
 
     # Angle vs lag
-    ax2.semilogx(checkpoints, angles_deg, 's-', color='darkblue', markersize=5)
-    ax2.set_xlabel('Lag', fontsize=11)
-    ax2.set_ylabel('Angle DA1–PC1 (degrees)', fontsize=11)
-    ax2.set_title('DA1 stability: angle to PC1', fontsize=12)
+    ax2.semilogx(checkpoints, angles_deg, 's-', color='darkblue', markersize=5,
+                 label='angle to PC1')
+    ax2.set_xlabel('Lag (steps, dt=0.1)', fontsize=11)
+    ax2.set_ylabel('Angle (degrees)', fontsize=11)
+    ax2.set_title('DA1 direction evolution', fontsize=12)
+    ax2.axvline(opt_lag, color='darkgreen', ls='--', alpha=0.7)
     ax2.axhline(90, color='gray', ls=':', alpha=0.5, label='orthogonal')
     ax2.set_ylim(0, 100)
-    ax2.legend(fontsize=9)
+    ax2.legend(fontsize=9, loc='upper left')
     ax2.grid(True, alpha=0.3)
 
-    fig.suptitle('Gap still rising at max lag — DA1 direction stable at ~82°', fontsize=12, y=0.98)
+    fig.suptitle('Gap peaks at τ*=1024 then decays. DA1 rotates from PC1 (0°) to ~36° in stable regime.',
+                 fontsize=11, y=0.995)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     pdf.savefig(fig)
     plt.close(fig)
@@ -278,7 +300,7 @@ def main():
     # Load data
     X_full, labels_str_full, feature_cols = load_dry_bean()
 
-    # Load results
+    # Load results (extended run: 19 checkpoints, lag up to 262144)
     with open(os.path.join(OUTDIR, 'winner', 'dry_bean_full_results.json')) as f:
         results = json.load(f)
 
@@ -288,21 +310,27 @@ def main():
     X_sub = X_full[idx]
     labels_str_sub = labels_str_full[idx]
 
-    # Back-project
-    X_s, da1_orig, pc1_orig, proj_da1, proj_pc1 = backproject(X_sub, results['da1'])
+    # Use the converged extended DA1 (lag=1024, peak gap=19.08)
+    da1_pca = results['da1_extended']
+    opt_lag = results['optimal_lag_extended']
+    gap = results['gap_at_optimal_extended']
+
+    X_s, da1_orig, pc1_orig, proj_da1, proj_pc1 = backproject(X_sub, da1_pca)
     cos_val = abs(np.dot(da1_orig, pc1_orig))
 
     print(f"|cos(DA1, PC1)| = {cos_val:.4f}")
-    print(f"Gap = {results['gap_at_optimal']:.2f}")
+    print(f"Gap = {gap:.2f} at optimal lag τ*={opt_lag}")
 
     # Generate PDF
     outpath = os.path.join(OUTDIR, 'drybean_report.pdf')
     with PdfPages(outpath) as pdf:
-        page_title(pdf, X_full, labels_str_full, feature_cols)
+        page_title(pdf, X_full, labels_str_full, feature_cols, cos_val, gap, opt_lag)
         page_scatter(pdf, proj_da1, proj_pc1, labels_str_sub, cos_val)
         page_histograms(pdf, proj_da1, proj_pc1, labels_str_sub)
         page_loadings(pdf, da1_orig, pc1_orig, feature_cols)
-        page_gap_profile(pdf, os.path.join(OUTDIR, 'winner', 'dry_bean_full_profile.npz'))
+        page_gap_profile(pdf,
+                         os.path.join(OUTDIR, 'winner', 'dry_bean_full_profile_extended.npz'),
+                         opt_lag)
         page_class_table(pdf, X_sub, X_s, proj_da1, proj_pc1, labels_str_sub,
                          da1_orig, pc1_orig, feature_cols)
 

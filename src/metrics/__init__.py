@@ -2,6 +2,7 @@
 Metrics Module - Autocorrelation Analysis
 """
 from .autocorrelation import (
+    aggregate_ssa,
     compute_autocorrelation,
     compute_ssa_score,
     compute_vector_autocorrelation,
@@ -13,6 +14,7 @@ from .da_directions import (
 )
 
 __all__ = [
+    'aggregate_ssa',
     'compute_autocorrelation',
     'compute_ssa_score',
     'compute_vector_autocorrelation',
