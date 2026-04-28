@@ -94,19 +94,37 @@ def simulate_per_axis_varying_rate(
     mu_f = np.zeros(d)
     X0c = snapshots[0] - mu_f
     eigs_by_tau: dict[float, np.ndarray] = {}
+    topvecs_by_tau: dict[float, np.ndarray] = {}
     for ts in tau_steps:
         Xtc = snapshots[ts] - mu_f
         C = (Xtc.T @ X0c) / N
         Csym = 0.5 * (C + C.T)
-        eigs = np.sort(np.linalg.eigvalsh(Csym))[::-1]
-        eigs_by_tau[round(ts * dt, 6)] = eigs
+        evals, evecs = np.linalg.eigh(Csym)
+        order = np.argsort(evals)[::-1]
+        eigs_by_tau[round(ts * dt, 6)] = evals[order]
+        topvecs_by_tau[round(ts * dt, 6)] = evecs[:, order[:k]]
+
+    # PCA: top-k eigenvectors of the sample covariance Chat(0) = (1/N) X0 X0^T.
+    # This is the standard PCA estimator; equivalent to top-k of Csym(0) up to
+    # sign/order. We compute it directly for clarity.
+    sample_cov = (X0c.T @ X0c) / N
+    evals_pca, evecs_pca = np.linalg.eigh(sample_cov)
+    order_pca = np.argsort(evals_pca)[::-1]
+    pca_topk = evecs_pca[:, order_pca[:k]]
 
     return {
         "eigs_by_tau": eigs_by_tau,
+        "topvecs_by_tau": topvecs_by_tau,
+        "pca_topk": pca_topk,
         "sigma_f": sigma_f,
         "gamma": d / N,
         "d": d, "N": N, "k": k,
     }
+
+
+def subspace_alignment(V, Q_planted):
+    """||V^T Q_planted||_F^2 / k. Equals 1 for perfect recovery, k/d for random."""
+    return float(np.linalg.norm(V.T @ Q_planted, ord="fro") ** 2 / Q_planted.shape[1])
 
 
 def plateau_width(taus, counts, m_hat):
@@ -196,6 +214,15 @@ def run_varying_rate(
     tau_star, m_hat = auto_select_tau_star(taus, counts)
     width, tlo, thi = plateau_width(taus, counts, m_hat)
 
+    # PCA-vs-DA subspace alignment with the planted basis Q[:, :k].
+    Q_planted = Q[:, :k]
+    pca_align = subspace_alignment(sim["pca_topk"], Q_planted)
+    da_align_at_tau_star = subspace_alignment(sim["topvecs_by_tau"][tau_star], Q_planted)
+    chance = k / d
+    da_align_by_tau = np.array([
+        subspace_alignment(sim["topvecs_by_tau"][float(t)], Q_planted) for t in taus
+    ])
+
     # ---- Numerical readout --------------------------------------------------
     print("\n" + "=" * 72)
     print("RESULTS")
@@ -207,6 +234,12 @@ def run_varying_rate(
               f"width = {width:.4f}")
     else:
         print("  plateau range             : (empty / m_hat = 0)")
+    print(f"\n  Subspace alignment with planted basis Q[:, :k] "
+          f"(1 = perfect, {chance:.3f} = chance k/d):")
+    print(f"    PCA  (top-k of sample covariance Chat(0)) : {pca_align:.4f}")
+    print(f"    DA   (top-k of Csym(tau*)  at tau*={tau_star:.2f})  : "
+          f"{da_align_at_tau_star:.4f}")
+    print(f"    chance (k/d)                              : {chance:.4f}")
 
     print("\n  count(tau) curve:")
     print("       tau         count")
@@ -215,9 +248,9 @@ def run_varying_rate(
         print(f"    {t:9.4f}    {cnt:5d}{marker}")
 
     # ---- Figure -------------------------------------------------------------
-    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.0))
+    fig, axes = plt.subplots(1, 3, figsize=(18.5, 5.0))
 
-    # Left: count(tau) with truth & tau*
+    # (a): count(tau) with truth & tau*
     ax = axes[0]
     ax.plot(taus, counts, "o-", color="C0", lw=1.6, markersize=5,
             label=r"$\#\{\lambda_j(\tau) > \lambda_+(\tau)\}$")
@@ -226,7 +259,6 @@ def run_varying_rate(
     ax.axvline(tau_star, color="green", linestyle=":", lw=1.4,
                label=fr"auto $\tau^\star={tau_star:.2f}$")
     if tlo is not None and m_hat > 0:
-        # green band over the plateau region
         tlo_show = max(tlo, taus[taus > 0].min() if (taus > 0).any() else tlo)
         ax.axvspan(tlo_show, thi, color="green", alpha=0.10,
                    label=fr"plateau (width$={width:.2f}$)")
@@ -238,7 +270,7 @@ def run_varying_rate(
     ax.legend(fontsize=8, loc="best")
     ax.grid(True, alpha=0.3)
 
-    # Right: histogram of Kramers exponent (proxy for -log mu_meta_i)
+    # (b): histogram of Kramers exponent (proxy for -log mu_meta_i)
     ax = axes[1]
     n_bins = max(6, k // 3)
     ax.hist(kramers, bins=n_bins, color="steelblue", alpha=0.85,
@@ -248,6 +280,25 @@ def run_varying_rate(
     ax.set_title(rf"(b) per-axis rate spread "
                  rf"(${kramers.min():.1f}$ to ${kramers.max():.1f}$)")
     ax.grid(True, alpha=0.3, axis="y")
+
+    # (c): subspace alignment vs tau, DA versus PCA
+    ax = axes[2]
+    ax.plot(taus, da_align_by_tau, "o-", color="C0", lw=1.6, markersize=5,
+            label=r"DA (top-$k$ of $\hat C^{\rm sym}(\tau)$)")
+    ax.axhline(pca_align, color="C1", linestyle="-", lw=1.6,
+               label=fr"PCA (top-$k$ of $\hat C(0)$) $={pca_align:.3f}$")
+    ax.axhline(chance, color="gray", linestyle=":", lw=1.2,
+               label=fr"chance $=k/d={chance:.2f}$")
+    ax.axhline(1.0, color="crimson", linestyle="--", lw=1.0, alpha=0.5,
+               label="perfect $=1$")
+    ax.set_xscale("symlog", linthresh=max(2.0 * dt, 0.05))
+    ax.set_xlabel(r"$\tau$ (lag, symlog)")
+    ax.set_ylabel(r"subspace alignment with $Q[:,\,:k]$")
+    ax.set_title(rf"(c) DA recovers planted subspace; PCA at chance "
+                 rf"(DA@$\tau^\star$ $={da_align_at_tau_star:.3f}$)")
+    ax.set_ylim(-0.05, 1.05)
+    ax.legend(fontsize=8, loc="best")
+    ax.grid(True, alpha=0.3)
 
     fig.suptitle(
         rf"Varying-rate planted spikes (no matched-V constraint): "
@@ -271,6 +322,8 @@ def run_varying_rate(
         "taus": taus, "counts": counts,
         "m_hat": m_hat, "tau_star": tau_star,
         "plateau_width": width, "plateau_lo": tlo, "plateau_hi": thi,
+        "pca_align": pca_align, "da_align_at_tau_star": da_align_at_tau_star,
+        "da_align_by_tau": da_align_by_tau, "chance": chance,
         "sigma_f": sim["sigma_f"], "gamma": sim["gamma"],
         "out_path": out_path,
     }
