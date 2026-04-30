@@ -117,25 +117,35 @@ def simulate(
 
     mu_f = np.zeros(d)
     X0c = snapshots[0] - mu_f
+    C0 = (X0c.T @ X0c) / N
+    tr_C0 = np.trace(C0)
+
     eigs_by_tau: dict[float, np.ndarray] = {}
     topvecs_by_tau: dict[float, np.ndarray] = {}
+    rho_by_tau: dict[float, float] = {}
     for ts in tau_steps:
+        tau_key = round(ts * dt, 6)
         Xtc = snapshots[ts] - mu_f
         C = (Xtc.T @ X0c) / N
         Csym = 0.5 * (C + C.T)
         if return_top_eigvecs_all_lags:
             evals, evecs = np.linalg.eigh(Csym)
             order = np.argsort(evals)[::-1]
-            eigs_by_tau[round(ts * dt, 6)] = evals[order]
-            topvecs_by_tau[round(ts * dt, 6)] = evecs[:, order[:k]]
+            eigs_by_tau[tau_key] = evals[order]
+            topvecs_by_tau[tau_key] = evecs[:, order[:k]]
         else:
             eigs = np.sort(np.linalg.eigvalsh(Csym))[::-1]
-            eigs_by_tau[round(ts * dt, 6)] = eigs
+            eigs_by_tau[tau_key] = eigs
+        # rho(tau) = tr(Csym) / tr(C0)
+        rho_by_tau[tau_key] = float(np.trace(Csym) / tr_C0)
 
     return {
         "eigs_by_tau": eigs_by_tau,
         "topvecs_by_tau": topvecs_by_tau,
+        "rho_by_tau": rho_by_tau,
         "sigma_f": sigma_f,
+        "sigma_f_sq": sigma_f_sq,
+        "tr_C0": float(tr_C0),
         "gamma": d / N,
         "d": d, "N": N, "k": k,
     }
@@ -382,6 +392,26 @@ def main(out_path: Path | None = None):
     fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
     print(f"\nsaved figure to: {out_path}")
+
+    # Save rho(tau) and auxiliary data
+    rho_taus = np.array(sorted(res["rho_by_tau"].keys()))
+    rho_vals = np.array([res["rho_by_tau"][t] for t in rho_taus])
+    npz_path = out_path.with_suffix(".npz")
+    np.savez(npz_path,
+             taus=rho_taus,
+             rho=rho_vals,
+             d=d, N=N, k=k, c=c, sigma_small=sigma_small,
+             dt=dt, tau_max=tau_max,
+             sigma_f_sq=res["sigma_f_sq"],
+             tr_C0=res["tr_C0"],
+             gamma=gamma,
+             tau_star=tau_star, m_hat=m_hat,
+             counts=counts,
+             da_align=da_align_by_tau,
+             pca_align=pca_align)
+    print(f"saved data to: {npz_path}")
+    print(f"  rho range: [{rho_vals[1:].min():.4e}, {rho_vals[1:].max():.4e}] "
+          f"(excluding tau=0)")
 
 
 if __name__ == "__main__":
