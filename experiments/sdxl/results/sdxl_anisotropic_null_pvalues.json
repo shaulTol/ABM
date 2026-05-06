@@ -1,0 +1,108 @@
+{
+  "N_big": 850,
+  "n_resample": 200,
+  "B_boot": 10000,
+  "observed_top": [
+    0.009961887262761593,
+    0.005123412702232599,
+    0.003467896720394492,
+    -0.003437479492276907,
+    0.0031101282220333815,
+    0.0024513835087418556,
+    -0.0022039064206182957,
+    -0.0019354744581505656,
+    0.001776719349436462,
+    0.0016119711799547076
+  ],
+  "lambda1_observed": 0.009961887262761593,
+  "pvalues": {
+    "lambda_1": {
+      "observed": 0.009961887262761593,
+      "null_mean_signed": 0.00033268437541172273,
+      "null_mean_abs": 0.00046460060899494417,
+      "null_max_abs": 0.001232742355963622,
+      "count_ge_obs": 0,
+      "p_empirical": 9.999000099990002e-05
+    },
+    "lambda_2": {
+      "observed": 0.005123412702232599,
+      "null_mean_signed": -3.557019166553254e-05,
+      "null_mean_abs": 0.0002959825336342736,
+      "null_max_abs": 0.0006827848600675655,
+      "count_ge_obs": 0,
+      "p_empirical": 9.999000099990002e-05
+    },
+    "lambda_3": {
+      "observed": 0.003467896720394492,
+      "null_mean_signed": 2.7096747248448233e-06,
+      "null_mean_abs": 0.0002326467381935085,
+      "null_max_abs": 0.0004361603405305249,
+      "count_ge_obs": 0,
+      "p_empirical": 9.999000099990002e-05
+    },
+    "lambda_4": {
+      "observed": -0.003437479492276907,
+      "null_mean_signed": -1.829366478315474e-05,
+      "null_mean_abs": 0.00019019987112167303,
+      "null_max_abs": 0.00030618768185059826,
+      "count_ge_obs": 0,
+      "p_empirical": 9.999000099990002e-05
+    },
+    "lambda_5": {
+      "observed": 0.0031101282220333815,
+      "null_mean_signed": 9.767491376856627e-06,
+      "null_mean_abs": 0.00016075165690304595,
+      "null_max_abs": 0.0002445851645409227,
+      "count_ge_obs": 0,
+      "p_empirical": 9.999000099990002e-05
+    },
+    "lambda_6": {
+      "observed": 0.0024513835087418556,
+      "null_mean_signed": -1.2038279753237643e-06,
+      "null_mean_abs": 0.0001398119957633353,
+      "null_max_abs": 0.00021329723565118372,
+      "count_ge_obs": 0,
+      "p_empirical": 9.999000099990002e-05
+    },
+    "lambda_7": {
+      "observed": -0.0022039064206182957,
+      "null_mean_signed": 9.048764863727069e-06,
+      "null_mean_abs": 0.0001239087405414128,
+      "null_max_abs": 0.00017007959933433125,
+      "count_ge_obs": 0,
+      "p_empirical": 9.999000099990002e-05
+    },
+    "lambda_8": {
+      "observed": -0.0019354744581505656,
+      "null_mean_signed": -1.8839636574533855e-06,
+      "null_mean_abs": 0.00011116980849933795,
+      "null_max_abs": 0.00014771735966088078,
+      "count_ge_obs": 0,
+      "p_empirical": 9.999000099990002e-05
+    },
+    "lambda_9": {
+      "observed": 0.001776719349436462,
+      "null_mean_signed": 3.450306345281974e-06,
+      "null_mean_abs": 0.00010102295312486809,
+      "null_max_abs": 0.00013578951644053369,
+      "count_ge_obs": 0,
+      "p_empirical": 9.999000099990002e-05
+    },
+    "lambda_10": {
+      "observed": 0.0016119711799547076,
+      "null_mean_signed": -1.4736164651277553e-06,
+      "null_mean_abs": 9.239893498114424e-05,
+      "null_max_abs": 0.00011960092783354565,
+      "count_ge_obs": 0,
+      "p_empirical": 9.999000099990002e-05
+    }
+  },
+  "gumbel_lambda1": {
+    "loc": 0.00013981036288121139,
+    "scale": 0.0004129907997468541,
+    "p_tail": 4.6909620967227056e-11,
+    "method": "scipy.stats.gumbel_r MLE"
+  },
+  "bonferroni_threshold_DA1_only": 0.05,
+  "caveat": "Bootstrap subsamples share the underlying N_big simulated trajectories; the resulting p-value is conservative w.r.t. between-simulation variance. Effective resolution ~1/B_boot ~= 1e-4 with B_boot=10000."
+}

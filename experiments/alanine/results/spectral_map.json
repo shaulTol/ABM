@@ -1,0 +1,42 @@
+{
+  "method": "spectral_map",
+  "reference": "Rydzewski et al., spectral map",
+  "implementation_version": "PLUMED-NEST plumID:24.005 (Zenodo 10678142, deposited 2024-02-19)",
+  "embedding_dim": 2,
+  "architecture": [
+    45,
+    200,
+    100,
+    50,
+    2
+  ],
+  "activation": "ELU",
+  "optimizer": "Adam (maximize=True)",
+  "lr": 0.001,
+  "n_epochs": 100,
+  "batch_size": 1000,
+  "alpha": 0.5,
+  "n_neigh": 0.5,
+  "n_eigen": 50,
+  "n_gap": 2,
+  "n_fit": 50000,
+  "valid_frac": 0.2,
+  "final_train_gap": 0.7932772636413574,
+  "final_valid_gap": 0.798988401889801,
+  "sm1_var": 0.0031151759903877974,
+  "sm2_var": 0.00020542960555758327,
+  "SM1": {
+    "r_psi": 0.043516919016838074,
+    "r_psi_se": 0.0011511153701094607,
+    "r_phi": 0.7517461180686951,
+    "r_phi_se": 0.0005162119128049458
+  },
+  "SM2": {
+    "r_psi": 0.0013910476118326187,
+    "r_psi_se": 0.0010962685534593427,
+    "r_phi": 0.5721824765205383,
+    "r_phi_se": 0.0006449120590321721
+  },
+  "bootstrap_B": 5000,
+  "bootstrap_note": "Model fixed; correlations bootstrapped over frames (refitting a 4-layer NN 5000 times is intractable)."
+}
