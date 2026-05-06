@@ -19,7 +19,7 @@ from scipy.stats import pearsonr
 
 EXPDIR = os.path.dirname(os.path.abspath(__file__))
 RESDIR = os.path.join(EXPDIR, 'results')
-DA_DIR = os.path.join(os.path.dirname(__file__), '..', 'da_directions')
+DA_DIR = os.path.join(os.path.dirname(__file__), '..', 'alanine', 'main')
 
 
 def load_alanine():

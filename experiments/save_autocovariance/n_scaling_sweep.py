@@ -23,7 +23,7 @@ from src.kde.kde_score import KDEScore
 def load_alanine():
     """Load alanine dipeptide: 45D heavy-atom distances + dihedrals."""
     data_dir = os.path.join(os.path.dirname(__file__),
-                            '..', 'da_directions', 'alanine_dipeptide', 'data')
+                            '..', 'alanine', 'main', 'alanine_dipeptide', 'data')
     dist_file = os.path.join(data_dir, 'alanine-dipeptide-3x250ns-heavy-atom-distances.npz')
     dihed_file = os.path.join(data_dir, 'alanine-dipeptide-3x250ns-backbone-dihedrals.npz')
 

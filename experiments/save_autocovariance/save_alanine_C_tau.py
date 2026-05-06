@@ -39,8 +39,8 @@ EXPDIR = os.path.dirname(os.path.abspath(__file__))
 RESDIR = os.path.join(EXPDIR, 'results')
 os.makedirs(RESDIR, exist_ok=True)
 
-# Reuse data loader from da_directions experiment
-DA_DIR = os.path.join(os.path.dirname(__file__), '..', 'da_directions')
+# Reuse data loader from alanine/main experiment
+DA_DIR = os.path.join(os.path.dirname(__file__), '..', 'alanine', 'main')
 
 
 def load_alanine():

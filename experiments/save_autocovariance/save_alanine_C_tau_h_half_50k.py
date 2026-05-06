@@ -31,7 +31,7 @@ free_conv_edges = _fc_mod.edges
 EXPDIR = os.path.dirname(os.path.abspath(__file__))
 RESDIR = os.path.join(EXPDIR, 'results')
 os.makedirs(RESDIR, exist_ok=True)
-DA_DIR = os.path.join(os.path.dirname(__file__), '..', 'da_directions')
+DA_DIR = os.path.join(os.path.dirname(__file__), '..', 'alanine', 'main')
 
 
 def load_alanine():

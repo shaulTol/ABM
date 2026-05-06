@@ -37,7 +37,7 @@ from experiments.noise_floor.noise_floor_utils import (
 
 OUTDIR = os.path.dirname(os.path.abspath(__file__))
 FIGDIR = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'figures')
-DA_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'da_directions')
+DA_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'alanine', 'main')
 
 
 def main():

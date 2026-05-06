@@ -467,7 +467,7 @@ def make_fig_alanine_da_tica():
     from scipy.stats import pearsonr
     from scipy.linalg import eigh as scipy_eigh
 
-    exp_dir = os.path.join(REPO_ROOT, 'experiments', 'da_directions')
+    exp_dir = os.path.join(REPO_ROOT, 'experiments', 'alanine', 'main')
     ctau_dir = os.path.join(REPO_ROOT, 'experiments', 'save_autocovariance')
 
     # DA from h/2 full C(τ) at τ=10000ps (last lag of the 10k grid)
@@ -487,7 +487,7 @@ def make_fig_alanine_da_tica():
     all_dists = None
     for dd in [os.path.expanduser(
             '~/github/thesis/modality_score/autocorrelation-mixture-analysis/'
-            'experiments/da_directions/alanine_dipeptide/data'),
+            'experiments/alanine/main/alanine_dipeptide/data'),
             os.path.join(exp_dir, 'alanine_dipeptide', 'data')]:
         dist_f = os.path.join(dd, 'alanine-dipeptide-3x250ns-heavy-atom-distances.npz')
         if os.path.exists(dist_f):
