@@ -131,6 +131,11 @@ def parse_args():
                    help="Only include lags >= this value when computing SSA mean")
     p.add_argument("--ssa_only", action="store_true",
                    help="Skip DA eigendecomposition, text probe cosines on DA, and DA1 grid")
+    p.add_argument("--freeconv_stop_M", type=int, default=None,
+                   help="Apply free-conv DA stopping: stop when lambda_2(C(tau)) "
+                        "< lambda_plus(tau) for M consecutive lags. tau* = lag "
+                        "just before the first crossing. Saves full C(tau*) "
+                        "matrix and full eigenspectrum for distribution analysis.")
     p.add_argument("--snapshot_schedule", type=str, default="linear",
                    choices=["linear", "log_and_fixed"],
                    help="Snapshot schedule: 'linear' (20 evenly spaced) or "
@@ -533,7 +538,8 @@ def _run_analysis(
     t0 = time.time()
     results = compute_ssa_da(z0_clip, z_snapshots, snapshot_lags,
                              ssa_min_lag=args.ssa_min_lag, ssa_only=args.ssa_only,
-                             dt=args.dt)
+                             dt=args.dt,
+                             freeconv_stop_M=getattr(args, 'freeconv_stop_M', None))
     ssa_time = time.time() - t0
     print(f"  SSA{'' if args.ssa_only else '+DA'} computed in {ssa_time:.1f}s")
 
@@ -828,6 +834,14 @@ def _run_analysis(
             "da2_gap": results["da2_gap"],
             "da2_cosines": da2_cosines,
         })
+        if "tau_star_freeconv" in results:
+            json_results.update({
+                "tau_star_freeconv": int(results["tau_star_freeconv"]),
+                "freeconv_M": int(results["freeconv_M"]),
+                "freeconv_sigma_f_sq": float(results["freeconv_sigma_f_sq"]),
+                "freeconv_gamma": float(results["freeconv_gamma"]),
+                "freeconv_first_cross_idx": int(results["freeconv_first_cross_idx"]),
+            })
 
     if lc_results is not None:
         json_results["ssa_lc"] = lc_results["ssa"]
@@ -853,6 +867,18 @@ def _run_analysis(
         for i, lag in enumerate(results["snapshot_lags"]):
             npz_data[f"eigenvalues_lag{lag}"] = results["eigenvalues"][i]
             npz_data[f"eigvecs_lag{lag}"] = results["top_eigvecs"][i]
+        # Free-conv stopping outputs
+        if "tau_star_freeconv" in results:
+            npz_data["tau_star_freeconv"] = np.int64(results["tau_star_freeconv"])
+            npz_data["freeconv_M"] = np.int64(results["freeconv_M"])
+            npz_data["freeconv_lambda_plus_profile"] = results["freeconv_lambda_plus_profile"]
+            npz_data["freeconv_lambda2_profile"] = results["freeconv_lambda2_profile"]
+            npz_data["freeconv_sigma_f_sq"] = np.float64(results["freeconv_sigma_f_sq"])
+            npz_data["freeconv_gamma"] = np.float64(results["freeconv_gamma"])
+            npz_data["freeconv_first_cross_idx"] = np.int64(results["freeconv_first_cross_idx"])
+            npz_data["C_tau_star"] = results["C_tau_star"]
+            npz_data["eigenvalues_full_at_tau_star"] = results["eigenvalues_full_at_tau_star"]
+            npz_data["eigvecs_full_topk_at_tau_star"] = results["eigvecs_full_topk_at_tau_star"]
 
     npz_path = os.path.join(output_dir, f"clip_da_{run_name}.npz")
     np.savez_compressed(npz_path, **npz_data)

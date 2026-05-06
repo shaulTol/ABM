@@ -403,7 +403,7 @@ def compute_ssa_and_da(clip_embedder, x0_flat, snapshots, snapshot_lags,
         C_tau = 0.5 * (C_tau + C_tau.T)
 
         eigvals, eigvecs = torch.linalg.eigh(C_tau)
-        idx = eigvals.abs().argsort(descending=True)
+        idx = eigvals.argsort(descending=True)
         eigvals = eigvals[idx].numpy()
         eigvecs = eigvecs[:, idx].numpy()
 

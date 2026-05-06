@@ -20,7 +20,8 @@ import matplotlib.pyplot as plt
 from style_config import setup_style, TEXT_WIDTH
 from src.metrics.da_directions import extract_da_directions
 from src.simulation.langevin import LangevinSimulatorD, simulate_d_trajectories
-from src.metrics.autocorrelation import compute_vector_ssa_score
+from src.metrics.autocorrelation import compute_vector_autocorrelation, aggregate_ssa
+
 
 setup_style()
 
@@ -44,9 +45,11 @@ pca_evals, pca_evecs = torch.linalg.eigh(cov_f)
 pc1 = pca_evecs[:, -1].numpy()
 
 # DA directions
-print("Computing DA directions...")
+DA_LAG_GMM = 1200
+DA_DT = 0.01
+print(f"Computing DA directions (GMM lag={DA_LAG_GMM}, dt={DA_DT}, τ_DA={DA_LAG_GMM*DA_DT})...")
 da_evals, da_evecs, C_tau = extract_da_directions(
-    means, covs, weights, lag=1200, n_trajectories=10000, dt=0.01,
+    means, covs, weights, lag=DA_LAG_GMM, n_trajectories=10000, dt=DA_DT,
     device=device, seed=seed)
 da1 = da_evecs[:, 0].cpu().numpy()
 
@@ -105,18 +108,45 @@ print(f"  DA1/DA2 gap ratio: {blob_da_gap:.3f}")
 print(f"  PCA eigenvalues: {blob_pca_evals_t.numpy()}")
 print(f"  PC1/PC2 ratio: {blob_pca_ratio:.3f}")
 
-# ─── Compute SSA for both ────────────────────────────────────────────────
+# ─── Compute SSA with 1/N noise floor truncation ────────────────────────
 dt_sim = 0.01
 T_sim = 5000
 max_lag = 4000
 n_traj = 2000
 
+
+def compute_ssa_truncated(traj, gmm_means, gmm_covs, gmm_weights, dt, max_lag_val):
+    """Compute Ŝ with 1/N noise floor truncation."""
+    rho, mu_f, cov_f_mat = compute_vector_autocorrelation(
+        traj, max_lag_val, gmm_means, gmm_covs, gmm_weights,
+        demean=True, normalization='trace')
+    rho_sq = (rho[1:] ** 2).numpy()
+
+    N_samples = traj.shape[0]
+    nf = 1.0 / N_samples  # noise floor for ρ²
+
+    # Find truncation lag: first ℓ where ρ²(ℓ) < 1/N
+    tau_star_idx = len(rho_sq)  # default: no truncation
+    for ell in range(len(rho_sq)):
+        if rho_sq[ell] < nf:
+            tau_star_idx = ell
+            break
+
+    S = aggregate_ssa(rho_sq[:tau_star_idx], dt=dt, normalize='riemann')
+    S_full = aggregate_ssa(rho_sq, dt=dt, normalize='riemann')
+    tau_star_phys = (tau_star_idx + 1) * dt if tau_star_idx < len(rho_sq) else None
+    print(f"    Ŝ(truncated) = {S:.4f}, Ŝ(full) = {S_full:.4f}, τ* = {tau_star_phys}, nf = {nf:.6f}")
+    lags_phys = np.arange(1, len(rho_sq) + 1) * dt
+    return S, rho, tau_star_phys, rho_sq, lags_phys
+
+
 print("Computing SSA (GMM)...")
 traj_gmm = simulate_d_trajectories(
     means, covs, weights, n_trajectories=n_traj, T=T_sim, dt=dt_sim,
     device=device, seed=seed + 100)
-ssa_gmm, _ = compute_vector_ssa_score(
-    traj_gmm.cpu(), max_lag, means, covs, weights, dt=dt_sim, normalize='riemann')
+ssa_gmm, rho_gmm, tau_star_gmm, rho_sq_gmm, lags_gmm = compute_ssa_truncated(
+    traj_gmm.cpu(), means, covs, weights, dt_sim, max_lag)
+print(f"  GMM: Ŝ = {ssa_gmm:.3f}, τ* = {tau_star_gmm}")
 
 print("Computing SSA (blob)...")
 means_blob = torch.tensor([[0.0, 0.0]])
@@ -125,8 +155,18 @@ weights_blob = torch.tensor([1.0])
 traj_blob = simulate_d_trajectories(
     means_blob, covs_blob_t, weights_blob, n_trajectories=n_traj, T=T_sim, dt=dt_sim,
     device=device, seed=seed + 200)
-ssa_blob, _ = compute_vector_ssa_score(
-    traj_blob.cpu(), max_lag, means_blob, covs_blob_t, weights_blob, dt=dt_sim, normalize='riemann')
+ssa_blob, rho_blob, tau_star_blob, rho_sq_blob, lags_blob = compute_ssa_truncated(
+    traj_blob.cpu(), means_blob, covs_blob_t, weights_blob, dt_sim, max_lag)
+print(f"  Blob: Ŝ = {ssa_blob:.3f}, τ* = {tau_star_blob}")
+
+# Save rho_sq profiles
+npz_path = os.path.join(OUT_DIR, 'dispersion_rho_sq.npz')
+np.savez(npz_path,
+         rho_sq_gmm=rho_sq_gmm, lags_gmm=lags_gmm,
+         rho_sq_blob=rho_sq_blob, lags_blob=lags_blob,
+         dt=dt_sim, tau_star_gmm=tau_star_gmm, tau_star_blob=tau_star_blob,
+         ssa_gmm=ssa_gmm, ssa_blob=ssa_blob)
+print(f"Saved rho_sq: {npz_path}")
 
 # ─── Compute differential entropy H ──────────────────────────────────────
 # Gaussian: H = 0.5 * ln((2*pi*e)^d * det(Sigma))

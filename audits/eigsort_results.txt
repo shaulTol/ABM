@@ -1,0 +1,445 @@
+SDXL DA Eigenvalue Sort Audit
+============================================================
+Checking whether abs-sort vs value-sort changes DA directions.
+
+
+============================================================
+  CANONICAL: elderly (free-conv, dt=0.0025)
+  File: clip_da_elderly_gs7p5_fc_dt0p0025.npz
+  Eigenvalue array shape: (768,)
+============================================================
+
+  Top-10 eigenvalues (abs-sort, as in code):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    9.961887e-03    9.961887e-03
+     2      1    5.123413e-03    5.123413e-03
+     3      2    3.467897e-03    3.467897e-03
+     4      3   -3.437479e-03    3.437479e-03
+     5      4    3.110128e-03    3.110128e-03
+     6      5    2.451384e-03    2.451384e-03
+     7      6   -2.203906e-03    2.203906e-03
+     8      7   -1.935474e-03    1.935474e-03
+     9      8    1.776719e-03    1.776719e-03
+    10      9    1.611971e-03    1.611971e-03
+
+  Top-10 eigenvalues (value-sort, descending):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    9.961887e-03    9.961887e-03
+     2      1    5.123413e-03    5.123413e-03
+     3      2    3.467897e-03    3.467897e-03
+     4      4    3.110128e-03    3.110128e-03
+     5      5    2.451384e-03    2.451384e-03
+     6      8    1.776719e-03    1.776719e-03
+     7      9    1.611971e-03    1.611971e-03
+     8     12    1.195398e-03    1.195398e-03
+     9     13    1.162609e-03    1.162609e-03
+    10     14    1.025208e-03    1.025208e-03
+
+  *** DISCREPANCY at top-5: abs-sort gives indices [0, 1, 2, 3, 4], value-sort gives [0, 1, 2, 4, 5]
+
+  *** DISCREPANCY at top-10: abs-sort gives indices [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], value-sort gives [0, 1, 2, 4, 5, 8, 9, 12, 13, 14]
+
+  Eigenvalue stats: min=-3.437479e-03, max=9.961887e-03, #negative=397/768
+  *** NEGATIVE eigenvalue (|3.437479e-03|) exceeds smallest positive in top-10 (1.025208e-03)
+
+  Recomputed from C_tau_star:
+    |cos(DA1_abs, DA1_val)| = 1.000000
+    |cos(DA1_abs, DA1_saved)| = 0.980655
+    Top-3 eigvals (abs-sort): [0.009961878880858421, 0.005123414099216461, 0.003467896720394492]
+    Top-3 eigvals (val-sort): [0.009961878880858421, 0.005123414099216461, 0.003467896720394492]
+
+============================================================
+  clip_da_car_gs7p5_n200.npz
+  File: clip_da_car_gs7p5_n200.npz
+  Eigenvalue array shape: (10,)
+============================================================
+
+  Top-10 eigenvalues (abs-sort, as in code):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    1.380058e-02    1.380058e-02
+     2      1    1.139663e-02    1.139663e-02
+     3      2    8.213373e-03    8.213373e-03
+     4      3    5.985941e-03    5.985941e-03
+     5      4    5.213306e-03    5.213306e-03
+     6      5    4.544092e-03    4.544092e-03
+     7      6    3.622039e-03    3.622039e-03
+     8      7    3.356317e-03    3.356317e-03
+     9      8    2.967482e-03    2.967482e-03
+    10      9    2.305595e-03    2.305595e-03
+
+  Top-10 eigenvalues (value-sort, descending):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    1.380058e-02    1.380058e-02
+     2      1    1.139663e-02    1.139663e-02
+     3      2    8.213373e-03    8.213373e-03
+     4      3    5.985941e-03    5.985941e-03
+     5      4    5.213306e-03    5.213306e-03
+     6      5    4.544092e-03    4.544092e-03
+     7      6    3.622039e-03    3.622039e-03
+     8      7    3.356317e-03    3.356317e-03
+     9      8    2.967482e-03    2.967482e-03
+    10      9    2.305595e-03    2.305595e-03
+
+  OK: abs-sort and value-sort give IDENTICAL top-10 ordering.
+
+  Eigenvalue stats: min=2.305595e-03, max=1.380058e-02, #negative=0/10
+
+============================================================
+  clip_da_cat_gs7p5_n200.npz
+  File: clip_da_cat_gs7p5_n200.npz
+  Eigenvalue array shape: (10,)
+============================================================
+
+  Top-10 eigenvalues (abs-sort, as in code):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    1.070966e-02    1.070966e-02
+     2      1    5.710552e-03    5.710552e-03
+     3      2    5.233120e-03    5.233120e-03
+     4      3    3.298871e-03    3.298871e-03
+     5      4    2.702359e-03    2.702359e-03
+     6      5    2.188451e-03    2.188451e-03
+     7      6    2.109753e-03    2.109753e-03
+     8      7    1.696325e-03    1.696325e-03
+     9      8    1.611666e-03    1.611666e-03
+    10      9    1.391438e-03    1.391438e-03
+
+  Top-10 eigenvalues (value-sort, descending):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    1.070966e-02    1.070966e-02
+     2      1    5.710552e-03    5.710552e-03
+     3      2    5.233120e-03    5.233120e-03
+     4      3    3.298871e-03    3.298871e-03
+     5      4    2.702359e-03    2.702359e-03
+     6      5    2.188451e-03    2.188451e-03
+     7      6    2.109753e-03    2.109753e-03
+     8      7    1.696325e-03    1.696325e-03
+     9      8    1.611666e-03    1.611666e-03
+    10      9    1.391438e-03    1.391438e-03
+
+  OK: abs-sort and value-sort give IDENTICAL top-10 ordering.
+
+  Eigenvalue stats: min=1.391438e-03, max=1.070966e-02, #negative=0/10
+
+============================================================
+  clip_da_elderly_gs7p5_n200.npz
+  File: clip_da_elderly_gs7p5_n200.npz
+  Eigenvalue array shape: (10,)
+============================================================
+
+  Top-10 eigenvalues (abs-sort, as in code):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    1.364897e-02    1.364897e-02
+     2      1    9.383669e-03    9.383669e-03
+     3      2    5.104195e-03    5.104195e-03
+     4      3    4.250459e-03    4.250459e-03
+     5      4    3.086339e-03    3.086339e-03
+     6      5    2.630719e-03    2.630719e-03
+     7      6    2.211049e-03    2.211049e-03
+     8      7    2.039380e-03    2.039380e-03
+     9      8    1.752241e-03    1.752241e-03
+    10      9    1.686150e-03    1.686150e-03
+
+  Top-10 eigenvalues (value-sort, descending):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    1.364897e-02    1.364897e-02
+     2      1    9.383669e-03    9.383669e-03
+     3      2    5.104195e-03    5.104195e-03
+     4      3    4.250459e-03    4.250459e-03
+     5      4    3.086339e-03    3.086339e-03
+     6      5    2.630719e-03    2.630719e-03
+     7      6    2.211049e-03    2.211049e-03
+     8      7    2.039380e-03    2.039380e-03
+     9      8    1.752241e-03    1.752241e-03
+    10      9    1.686150e-03    1.686150e-03
+
+  OK: abs-sort and value-sort give IDENTICAL top-10 ordering.
+
+  Eigenvalue stats: min=1.686150e-03, max=1.364897e-02, #negative=0/10
+
+============================================================
+  clip_da_flowers_gs7p5_n200.npz
+  File: clip_da_flowers_gs7p5_n200.npz
+  Eigenvalue array shape: (10,)
+============================================================
+
+  Top-10 eigenvalues (abs-sort, as in code):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    7.180268e-03    7.180268e-03
+     2      1    4.856711e-03    4.856711e-03
+     3      2    3.994078e-03    3.994078e-03
+     4      3    3.323751e-03    3.323751e-03
+     5      4    2.709181e-03    2.709181e-03
+     6      5    2.307252e-03    2.307252e-03
+     7      6    2.169353e-03    2.169353e-03
+     8      7    1.789103e-03    1.789103e-03
+     9      8    1.768104e-03    1.768104e-03
+    10      9    1.559163e-03    1.559163e-03
+
+  Top-10 eigenvalues (value-sort, descending):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    7.180268e-03    7.180268e-03
+     2      1    4.856711e-03    4.856711e-03
+     3      2    3.994078e-03    3.994078e-03
+     4      3    3.323751e-03    3.323751e-03
+     5      4    2.709181e-03    2.709181e-03
+     6      5    2.307252e-03    2.307252e-03
+     7      6    2.169353e-03    2.169353e-03
+     8      7    1.789103e-03    1.789103e-03
+     9      8    1.768104e-03    1.768104e-03
+    10      9    1.559163e-03    1.559163e-03
+
+  OK: abs-sort and value-sort give IDENTICAL top-10 ordering.
+
+  Eigenvalue stats: min=1.559163e-03, max=7.180268e-03, #negative=0/10
+
+============================================================
+  clip_da_food_gs7p5_n200.npz
+  File: clip_da_food_gs7p5_n200.npz
+  Eigenvalue array shape: (10,)
+============================================================
+
+  Top-10 eigenvalues (abs-sort, as in code):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    1.579009e-02    1.579009e-02
+     2      1    7.880517e-03    7.880517e-03
+     3      2    5.944500e-03    5.944500e-03
+     4      3    5.209679e-03    5.209679e-03
+     5      4    4.735612e-03    4.735612e-03
+     6      5    4.336658e-03    4.336658e-03
+     7      6    3.473188e-03    3.473188e-03
+     8      7    3.128923e-03    3.128923e-03
+     9      8    2.809433e-03    2.809433e-03
+    10      9    2.432291e-03    2.432291e-03
+
+  Top-10 eigenvalues (value-sort, descending):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    1.579009e-02    1.579009e-02
+     2      1    7.880517e-03    7.880517e-03
+     3      2    5.944500e-03    5.944500e-03
+     4      3    5.209679e-03    5.209679e-03
+     5      4    4.735612e-03    4.735612e-03
+     6      5    4.336658e-03    4.336658e-03
+     7      6    3.473188e-03    3.473188e-03
+     8      7    3.128923e-03    3.128923e-03
+     9      8    2.809433e-03    2.809433e-03
+    10      9    2.432291e-03    2.432291e-03
+
+  OK: abs-sort and value-sort give IDENTICAL top-10 ordering.
+
+  Eigenvalue stats: min=2.432291e-03, max=1.579009e-02, #negative=0/10
+
+============================================================
+  clip_da_latents_car_gs7p5_n200.npz: NO eigenvalue arrays found, skipping
+
+============================================================
+  clip_da_latents_cat_gs7p5_n200.npz: NO eigenvalue arrays found, skipping
+
+============================================================
+  clip_da_latents_elderly_gs7p5_n200.npz: NO eigenvalue arrays found, skipping
+
+============================================================
+  clip_da_latents_flowers_gs7p5_n200.npz: NO eigenvalue arrays found, skipping
+
+============================================================
+  clip_da_latents_food_gs7p5_n200.npz: NO eigenvalue arrays found, skipping
+
+============================================================
+  clip_da_latents_mountains_gs7p5_n200.npz: NO eigenvalue arrays found, skipping
+
+============================================================
+  clip_da_latents_person_gs7p5_n200.npz: NO eigenvalue arrays found, skipping
+
+============================================================
+  clip_da_latents_street_gs7p5_n200.npz: NO eigenvalue arrays found, skipping
+
+============================================================
+  clip_da_mountains_gs7p5_n200.npz
+  File: clip_da_mountains_gs7p5_n200.npz
+  Eigenvalue array shape: (10,)
+============================================================
+
+  Top-10 eigenvalues (abs-sort, as in code):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    1.320721e-02    1.320721e-02
+     2      1    1.036878e-02    1.036878e-02
+     3      2    8.456940e-03    8.456940e-03
+     4      3    6.369730e-03    6.369730e-03
+     5      4    5.190235e-03    5.190235e-03
+     6      5    4.739766e-03    4.739766e-03
+     7      6    2.755183e-03    2.755183e-03
+     8      7    2.535377e-03    2.535377e-03
+     9      8    2.277656e-03    2.277656e-03
+    10      9    2.067612e-03    2.067612e-03
+
+  Top-10 eigenvalues (value-sort, descending):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    1.320721e-02    1.320721e-02
+     2      1    1.036878e-02    1.036878e-02
+     3      2    8.456940e-03    8.456940e-03
+     4      3    6.369730e-03    6.369730e-03
+     5      4    5.190235e-03    5.190235e-03
+     6      5    4.739766e-03    4.739766e-03
+     7      6    2.755183e-03    2.755183e-03
+     8      7    2.535377e-03    2.535377e-03
+     9      8    2.277656e-03    2.277656e-03
+    10      9    2.067612e-03    2.067612e-03
+
+  OK: abs-sort and value-sort give IDENTICAL top-10 ordering.
+
+  Eigenvalue stats: min=2.067612e-03, max=1.320721e-02, #negative=0/10
+
+============================================================
+  clip_da_person_gs7p5_n200.npz
+  File: clip_da_person_gs7p5_n200.npz
+  Eigenvalue array shape: (10,)
+============================================================
+
+  Top-10 eigenvalues (abs-sort, as in code):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    3.775032e-02    3.775032e-02
+     2      1    2.138555e-02    2.138555e-02
+     3      2    1.531417e-02    1.531417e-02
+     4      3    1.301819e-02    1.301819e-02
+     5      4    1.064443e-02    1.064443e-02
+     6      5    9.406979e-03    9.406979e-03
+     7      6    7.932338e-03    7.932338e-03
+     8      7    6.749895e-03    6.749895e-03
+     9      8    6.021867e-03    6.021867e-03
+    10      9    5.409921e-03    5.409921e-03
+
+  Top-10 eigenvalues (value-sort, descending):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    3.775032e-02    3.775032e-02
+     2      1    2.138555e-02    2.138555e-02
+     3      2    1.531417e-02    1.531417e-02
+     4      3    1.301819e-02    1.301819e-02
+     5      4    1.064443e-02    1.064443e-02
+     6      5    9.406979e-03    9.406979e-03
+     7      6    7.932338e-03    7.932338e-03
+     8      7    6.749895e-03    6.749895e-03
+     9      8    6.021867e-03    6.021867e-03
+    10      9    5.409921e-03    5.409921e-03
+
+  OK: abs-sort and value-sort give IDENTICAL top-10 ordering.
+
+  Eigenvalue stats: min=5.409921e-03, max=3.775032e-02, #negative=0/10
+
+============================================================
+  clip_da_street_gs7p5_n200.npz
+  File: clip_da_street_gs7p5_n200.npz
+  Eigenvalue array shape: (10,)
+============================================================
+
+  Top-10 eigenvalues (abs-sort, as in code):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    2.116049e-02    2.116049e-02
+     2      1    5.180852e-03    5.180852e-03
+     3      2    3.064210e-03    3.064210e-03
+     4      3    2.764881e-03    2.764881e-03
+     5      4    2.423933e-03    2.423933e-03
+     6      5    2.161517e-03    2.161517e-03
+     7      6    1.759513e-03    1.759513e-03
+     8      7   -1.534205e-03    1.534205e-03
+     9      8    1.506435e-03    1.506435e-03
+    10      9    1.332279e-03    1.332279e-03
+
+  Top-10 eigenvalues (value-sort, descending):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    2.116049e-02    2.116049e-02
+     2      1    5.180852e-03    5.180852e-03
+     3      2    3.064210e-03    3.064210e-03
+     4      3    2.764881e-03    2.764881e-03
+     5      4    2.423933e-03    2.423933e-03
+     6      5    2.161517e-03    2.161517e-03
+     7      6    1.759513e-03    1.759513e-03
+     8      8    1.506435e-03    1.506435e-03
+     9      9    1.332279e-03    1.332279e-03
+    10      7   -1.534205e-03    1.534205e-03
+
+  *** DISCREPANCY at top-10: abs-sort gives indices [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], value-sort gives [0, 1, 2, 3, 4, 5, 6, 8, 9, 7]
+
+  Eigenvalue stats: min=-1.534205e-03, max=2.116049e-02, #negative=1/10
+  *** NEGATIVE eigenvalue (|1.534205e-03|) exceeds smallest positive in top-10 (1.332279e-03)
+
+============================================================
+  clip_da_elderly_gs7p5.npz
+  File: clip_da_elderly_gs7p5.npz
+  Eigenvalue array shape: (10,)
+============================================================
+
+  Top-10 eigenvalues (abs-sort, as in code):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    2.486211e-02    2.486211e-02
+     2      1    8.442324e-03    8.442324e-03
+     3      2    4.537074e-03    4.537074e-03
+     4      3    3.989731e-03    3.989731e-03
+     5      4    2.319322e-03    2.319322e-03
+     6      5    2.102189e-03    2.102189e-03
+     7      6    1.824306e-03    1.824306e-03
+     8      7    1.369070e-03    1.369070e-03
+     9      8    1.092397e-03    1.092397e-03
+    10      9    1.038934e-03    1.038934e-03
+
+  Top-10 eigenvalues (value-sort, descending):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    2.486211e-02    2.486211e-02
+     2      1    8.442324e-03    8.442324e-03
+     3      2    4.537074e-03    4.537074e-03
+     4      3    3.989731e-03    3.989731e-03
+     5      4    2.319322e-03    2.319322e-03
+     6      5    2.102189e-03    2.102189e-03
+     7      6    1.824306e-03    1.824306e-03
+     8      7    1.369070e-03    1.369070e-03
+     9      8    1.092397e-03    1.092397e-03
+    10      9    1.038934e-03    1.038934e-03
+
+  OK: abs-sort and value-sort give IDENTICAL top-10 ordering.
+
+  Eigenvalue stats: min=1.038934e-03, max=2.486211e-02, #negative=0/10
+
+============================================================
+  clip_da_latents_elderly_gs7p5.npz: NO eigenvalue arrays found, skipping
+
+============================================================
+  clip_da_latents_person_gs7p5.npz: NO eigenvalue arrays found, skipping
+
+============================================================
+  clip_da_person_gs7p5.npz
+  File: clip_da_person_gs7p5.npz
+  Eigenvalue array shape: (10,)
+============================================================
+
+  Top-10 eigenvalues (abs-sort, as in code):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    2.072250e-02    2.072250e-02
+     2      1    1.076245e-02    1.076245e-02
+     3      2    7.910132e-03    7.910132e-03
+     4      3    6.634296e-03    6.634296e-03
+     5      4    3.454295e-03    3.454295e-03
+     6      5    2.341212e-03    2.341212e-03
+     7      6    1.943516e-03    1.943516e-03
+     8      7    1.499241e-03    1.499241e-03
+     9      8    1.431881e-03    1.431881e-03
+    10      9    1.111219e-03    1.111219e-03
+
+  Top-10 eigenvalues (value-sort, descending):
+  Rank  Index      Eigenvalue    |Eigenvalue|
+     1      0    2.072250e-02    2.072250e-02
+     2      1    1.076245e-02    1.076245e-02
+     3      2    7.910132e-03    7.910132e-03
+     4      3    6.634296e-03    6.634296e-03
+     5      4    3.454295e-03    3.454295e-03
+     6      5    2.341212e-03    2.341212e-03
+     7      6    1.943516e-03    1.943516e-03
+     8      7    1.499241e-03    1.499241e-03
+     9      8    1.431881e-03    1.431881e-03
+    10      9    1.111219e-03    1.111219e-03
+
+  OK: abs-sort and value-sort give IDENTICAL top-10 ordering.
+
+  Eigenvalue stats: min=1.111219e-03, max=2.072250e-02, #negative=0/10
+
+============================================================
+SUMMARY
+============================================================
+*** DISCREPANCIES FOUND -- abs-sort and value-sort differ!

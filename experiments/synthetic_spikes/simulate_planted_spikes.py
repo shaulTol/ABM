@@ -33,7 +33,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "experiments" / "noise_floor"))
 from free_conv_utils import edges as fc_edges, density as fc_density, edge_tau0  # noqa: E402
 
-matplotlib.rcParams["figure.dpi"] = 120
+sys.path.insert(0, str(ROOT / "figures"))
+from _spike_fig_style import (  # noqa: E402
+    HIST_EMPIRICAL, FREECONV_CURVE, FLOOR_TAU, FLOOR_INF,
+    HIST_ALPHA_EMP, CURVE_LW, VLINE_LW, VLINE_STYLE,
+)
+from style_config import setup_style  # noqa: E402
+setup_style()
 
 
 # ============================================================================
@@ -270,7 +276,8 @@ def main(out_path: Path | None = None):
     # ------------------------------------------------------------------------
     # Assemble 6-panel figure
     # ------------------------------------------------------------------------
-    fig, axes = plt.subplots(2, 3, figsize=(16.5, 8.5))
+    fig, axes = plt.subplots(2, 3, figsize=(10, 7))
+    plt.subplots_adjust(hspace=0.50, wspace=0.40)
 
     # (a) tau = 0 spectrum
     ax = axes[0, 0]
@@ -278,17 +285,19 @@ def main(out_path: Path | None = None):
     lm0, lp0 = edge_tau0(sigma_f, gamma)
     bins = np.linspace(min(eigs0.min(), lm0) - 0.2,
                        max(eigs0.max(), lp0) + 0.2, 60)
-    ax.hist(eigs0, bins=bins, density=True, color="steelblue", alpha=0.55,
+    ax.hist(eigs0, bins=bins, density=True,
+            color=HIST_EMPIRICAL, alpha=HIST_ALPHA_EMP, edgecolor='none',
             label=f"empirical ($d={d}$, $N={N}$)")
     lam_grid = np.linspace(lm0, lp0, 500)
     ax.plot(lam_grid, fc_density(lam_grid, 0.0, sigma=sigma_f, gamma=gamma),
-            "g--", lw=2, label="free-conv (= MP at $\\tau=0$)")
-    ax.axvline(lp0, color="g", linestyle=":", lw=1.2,
+            color=FREECONV_CURVE, lw=CURVE_LW, label="free-conv (= MP at $\\tau=0$)")
+    ax.axvline(lp0, color=FLOOR_TAU, ls=VLINE_STYLE, lw=VLINE_LW,
                label=fr"$\lambda_+={lp0:.2f}$")
-    ax.axvline(lm0, color="g", linestyle=":", lw=1.2)
-    ax.set_xlabel(r"$\lambda$"); ax.set_ylabel("density")
-    ax.set_title(r"(a) $\tau = 0$: PCA-blind, no spikes visible")
-    ax.legend(fontsize=8)
+    ax.axvline(lm0, color=FLOOR_TAU, ls=VLINE_STYLE, lw=VLINE_LW)
+    ax.set_xlabel(r"$\lambda$")
+    ax.set_ylabel("density")
+    ax.set_title(r"$\tau = 0$: PCA-blind, no spikes visible", fontsize=9)
+    ax.legend(fontsize=6.5)
 
     # (b) tau* spectrum
     ax = axes[0, 1]
@@ -296,94 +305,87 @@ def main(out_path: Path | None = None):
     lm_r, lp_r = fc_edges(tau_star, sigma=sigma_f, gamma=gamma)
     bins = np.linspace(min(eigs_t.min(), lm_r) - 0.2,
                        max(eigs_t.max(), lp_r) + 0.5, 60)
-    ax.hist(eigs_t, bins=bins, density=True, color="steelblue", alpha=0.55,
+    ax.hist(eigs_t, bins=bins, density=True,
+            color=HIST_EMPIRICAL, alpha=HIST_ALPHA_EMP, edgecolor='none',
             label="empirical")
     lam_grid = np.linspace(lm_r, lp_r, 500)
     ax.plot(lam_grid, fc_density(lam_grid, tau_star, sigma=sigma_f, gamma=gamma),
-            "g--", lw=2, label="free-conv density (Thm 3)")
-    ax.axvline(lp_r, color="g", linestyle=":", lw=1.2,
+            color=FREECONV_CURVE, lw=CURVE_LW, label="free-conv density (Thm 3)")
+    ax.axvline(lp_r, color=FLOOR_TAU, ls=VLINE_STYLE, lw=VLINE_LW,
                label=fr"$\lambda_+(\tau^*)={lp_r:.2f}$")
-    ax.axvline(lm_r, color="g", linestyle=":", lw=1.2)
+    ax.axvline(lm_r, color=FLOOR_TAU, ls=VLINE_STYLE, lw=VLINE_LW)
     yloc = ax.get_ylim()[1] * 0.05 if ax.get_ylim()[1] > 0 else 0.05
     ax.scatter(eigs_t[:m_hat], np.full(m_hat, yloc),
-               marker="|", s=180, color="crimson", zorder=5,
+               marker="|", s=100, color=FREECONV_CURVE, zorder=5,
                label=fr"top-{m_hat} eigenvalues")
-    ax.set_xlabel(r"$\lambda$"); ax.set_ylabel("density")
-    ax.set_title(rf"(b) $\tau^*={tau_star:.1f}$: {m_hat} spikes "
-                 rf"(planted $k={k}$)")
-    ax.legend(fontsize=8)
+    ax.set_xlabel(r"$\lambda$")
+    ax.set_ylabel("density")
+    ax.set_title(rf"$\tau^*={tau_star:.1f}$: {m_hat} spikes "
+                 rf"(planted $k={k}$)", fontsize=9)
+    ax.legend(fontsize=6.5)
 
     # (c) count(tau) curve with auto-selection
     ax = axes[0, 2]
-    ax.plot(taus, counts, "o-", color="C0", lw=1.6, markersize=5,
+    taus_pos = taus[taus > 0]
+    counts_pos = counts[taus > 0]
+    ax.plot(taus_pos, counts_pos, "o-", color="C0", lw=1.2, markersize=3,
             label=r"$\#\{\lambda_j(\tau) > \lambda_+(\tau)\}$")
     ax.axhline(k, color="crimson", linestyle="--", lw=1.4,
                label=fr"planted truth $k={k}$")
-    ax.axvline(tau_star, color="green", linestyle=":", lw=1.4,
+    ax.axvline(tau_star, color=FLOOR_TAU, ls=VLINE_STYLE, lw=VLINE_LW,
                label=fr"auto $\tau^*={tau_star:.1f}$")
-    ax.set_xscale("symlog", linthresh=max(2.0 * dt, 0.05))
-    ax.set_xlabel(r"$\tau$ (lag, symlog)")
+    ax.set_xscale("log")
+    ax.set_xlabel(r"$\tau$ (lag)")
     ax.set_ylabel(r"$\#\{\lambda_j > \lambda_+(\tau)\}$")
-    ax.set_title(r"(c) auto-selection of $\tau^*$ via plateau")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
+    ax.set_title(r"Auto-selection of $\tau^*$ via plateau", fontsize=9)
+    ax.legend(fontsize=6.5)
 
     # (d) detected count vs N
     ax = axes[1, 0]
     Ns = np.array([t[0] for t in sweep_N_out])
     ms = np.array([t[1] for t in sweep_N_out])
-    ax.plot(Ns, ms, "o-", color="C0", lw=1.6, markersize=6,
+    ax.plot(Ns, ms, "o-", color="C0", lw=1.2, markersize=4,
             label="detected count")
     ax.axhline(k, color="crimson", linestyle="--", lw=1.4,
                label=fr"planted truth $k={k}$")
     ax.set_xscale("log")
     ax.set_xlabel(r"$N$ (number of trajectories)")
     ax.set_ylabel("detected count")
-    ax.set_title(rf"(d) sample-complexity sweep ($d={d}$, $k={k}$ fixed)")
-    ax.legend(fontsize=9)
-    ax.grid(True, alpha=0.3)
+    ax.set_title(rf"Sample-complexity sweep ($d={d}$, $k={k}$)", fontsize=9)
+    ax.legend(fontsize=6.5)
 
     # (e) detected count vs k_planted
     ax = axes[1, 1]
     ks = np.array([t[0] for t in sweep_k_out])
     ms = np.array([t[1] for t in sweep_k_out])
-    ax.plot(ks, ms, "o-", color="C0", lw=1.6, markersize=6,
+    ax.plot(ks, ms, "o-", color="C0", lw=1.2, markersize=4,
             label="detected count")
     line_max = max(ks.max(), ms.max()) + 5
     ax.plot([0, line_max], [0, line_max], "k:", lw=1, alpha=0.6,
             label="identity (perfect recovery)")
     ax.set_xlabel(r"planted $k$ (number of metastable axes)")
     ax.set_ylabel("detected count")
-    ax.set_title(rf"(e) recovery vs $k_{{\rm planted}}$ "
-                 rf"($d={d}$, $N={N}$ fixed)")
-    ax.legend(fontsize=9)
-    ax.grid(True, alpha=0.3)
+    ax.set_title(rf"Recovery vs $k_{{\rm planted}}$ "
+                 rf"($d={d}$, $N={N}$)", fontsize=9)
+    ax.legend(fontsize=6.5)
 
     # (f) DA vs PCA subspace alignment with the planted basis Q[:, :k]
     ax = axes[1, 2]
-    ax.plot(taus, da_align_by_tau, "o-", color="C0", lw=1.6, markersize=5,
+    da_pos = da_align_by_tau[taus > 0]
+    ax.plot(taus_pos, da_pos, "o-", color="C0", lw=1.2, markersize=3,
             label="DA (top-k of $\\hat C_{\\rm sym}(\\tau)$)")
-    ax.axhline(pca_align, color="C1", linestyle="-", lw=1.6,
+    ax.axhline(pca_align, color="C1", linestyle="-", lw=1.2,
                label=fr"PCA (top-k of $\hat C(0)$) $= {pca_align:.2f}$")
-    ax.axhline(k / d, color="gray", linestyle=":", lw=1.2,
+    ax.axhline(k / d, color="gray", linestyle=":", lw=1.0,
                label=fr"chance $= k/d = {k/d:.2f}$")
     ax.axhline(1.0, color="crimson", linestyle="--", lw=1.0, alpha=0.5,
                label="perfect $= 1$")
-    ax.set_xscale("symlog", linthresh=max(2.0 * dt, 0.05))
-    ax.set_xlabel(r"$\tau$ (lag, symlog)")
+    ax.set_xscale("log")
+    ax.set_xlabel(r"$\tau$ (lag)")
     ax.set_ylabel(r"subspace alignment with $Q[:,:k]$")
-    ax.set_title("(f) DA recovers planted subspace; PCA stays at chance")
+    ax.set_title("DA recovers planted subspace; PCA at chance", fontsize=9)
     ax.set_ylim(-0.05, 1.05)
-    ax.legend(fontsize=8, loc="best")
-    ax.grid(True, alpha=0.3)
-
-    fig.suptitle(
-        rf"Synthetic planted-spike validation: $d={d}$, $k={k}$, "
-        rf"$\gamma=d/N={gamma:.2f}$, $c={c}$, $\sigma_s={sigma_small}$, "
-        rf"matched per-axis variance, planted basis $Q[:,:k]$ (random rotation)",
-        y=1.005, fontsize=11,
-    )
-    fig.tight_layout()
+    ax.legend(fontsize=6.5, loc="best")
 
     if out_path is None:
         out_path = Path(__file__).parent / "fig_planted_spikes.png"

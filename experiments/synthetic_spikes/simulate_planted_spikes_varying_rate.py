@@ -51,7 +51,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "experiments" / "noise_floor"))
 from free_conv_utils import edges as fc_edges, edge_tau0  # noqa: E402
 
-matplotlib.rcParams["figure.dpi"] = 120
+sys.path.insert(0, str(ROOT / "figures"))
+from _spike_fig_style import (  # noqa: E402
+    HIST_EMPIRICAL, FREECONV_CURVE, FLOOR_TAU, FLOOR_INF,
+    HIST_ALPHA_EMP, CURVE_LW, VLINE_LW, VLINE_STYLE,
+)
+from style_config import setup_style  # noqa: E402
+setup_style()
 
 
 # ============================================================================
@@ -248,65 +254,58 @@ def run_varying_rate(
         print(f"    {t:9.4f}    {cnt:5d}{marker}")
 
     # ---- Figure -------------------------------------------------------------
-    fig, axes = plt.subplots(1, 3, figsize=(18.5, 5.0))
+    fig, axes = plt.subplots(1, 3, figsize=(10, 3))
+    plt.subplots_adjust(wspace=0.45)
+
+    taus_pos = taus[taus > 0]
+    counts_pos = counts[taus > 0]
 
     # (a): count(tau) with truth & tau*
     ax = axes[0]
-    ax.plot(taus, counts, "o-", color="C0", lw=1.6, markersize=5,
+    ax.plot(taus_pos, counts_pos, "o-", color="C0", lw=1.2, markersize=3,
             label=r"$\#\{\lambda_j(\tau) > \lambda_+(\tau)\}$")
     ax.axhline(k, color="crimson", linestyle="--", lw=1.4,
                label=fr"planted truth $k={k}$")
-    ax.axvline(tau_star, color="green", linestyle=":", lw=1.4,
+    ax.axvline(tau_star, color=FLOOR_TAU, ls=VLINE_STYLE, lw=VLINE_LW,
                label=fr"auto $\tau^\star={tau_star:.2f}$")
     if tlo is not None and m_hat > 0:
-        tlo_show = max(tlo, taus[taus > 0].min() if (taus > 0).any() else tlo)
-        ax.axvspan(tlo_show, thi, color="green", alpha=0.10,
+        tlo_show = max(tlo, taus_pos.min())
+        ax.axvspan(tlo_show, thi, color=FLOOR_TAU, alpha=0.10,
                    label=fr"plateau (width$={width:.2f}$)")
-    ax.set_xscale("symlog", linthresh=max(2.0 * dt, 0.05))
-    ax.set_xlabel(r"$\tau$ (lag, symlog)")
+    ax.set_xscale("log")
+    ax.set_xlabel(r"$\tau$ (lag)")
     ax.set_ylabel(r"$\#\{\lambda_j > \lambda_+(\tau)\}$")
     ax.set_ylim(-1, max(k + 5, counts.max() + 3))
-    ax.set_title(rf"(a) plateau rule: $\hat m={m_hat}$ (planted $k={k}$)")
-    ax.legend(fontsize=8, loc="best")
-    ax.grid(True, alpha=0.3)
+    ax.set_title(rf"Plateau rule: $\hat m={m_hat}$ (planted $k={k}$)", fontsize=9)
+    ax.legend(fontsize=6.5, loc="center right")
 
     # (b): histogram of Kramers exponent (proxy for -log mu_meta_i)
     ax = axes[1]
     n_bins = max(6, k // 3)
-    ax.hist(kramers, bins=n_bins, color="steelblue", alpha=0.85,
-            edgecolor="black", lw=0.5)
+    ax.hist(kramers, bins=n_bins,
+            color=HIST_EMPIRICAL, alpha=HIST_ALPHA_EMP, edgecolor='none')
     ax.set_xlabel(r"Kramers exponent $\propto c^2 / (\sigma_{s,i}^2\,\sigma_f^2)$")
     ax.set_ylabel("count of axes")
-    ax.set_title(rf"(b) per-axis rate spread "
-                 rf"(${kramers.min():.1f}$ to ${kramers.max():.1f}$)")
-    ax.grid(True, alpha=0.3, axis="y")
+    ax.set_title(rf"Per-axis rate spread "
+                 rf"(${kramers.min():.1f}$ to ${kramers.max():.1f}$)", fontsize=9)
 
     # (c): subspace alignment vs tau, DA versus PCA
+    da_pos = da_align_by_tau[taus > 0]
     ax = axes[2]
-    ax.plot(taus, da_align_by_tau, "o-", color="C0", lw=1.6, markersize=5,
+    ax.plot(taus_pos, da_pos, "o-", color="C0", lw=1.2, markersize=3,
             label=r"DA (top-$k$ of $\hat C^{\rm sym}(\tau)$)")
-    ax.axhline(pca_align, color="C1", linestyle="-", lw=1.6,
+    ax.axhline(pca_align, color="C1", linestyle="-", lw=1.2,
                label=fr"PCA (top-$k$ of $\hat C(0)$) $={pca_align:.3f}$")
-    ax.axhline(chance, color="gray", linestyle=":", lw=1.2,
+    ax.axhline(chance, color="gray", linestyle=":", lw=1.0,
                label=fr"chance $=k/d={chance:.2f}$")
     ax.axhline(1.0, color="crimson", linestyle="--", lw=1.0, alpha=0.5,
                label="perfect $=1$")
-    ax.set_xscale("symlog", linthresh=max(2.0 * dt, 0.05))
-    ax.set_xlabel(r"$\tau$ (lag, symlog)")
+    ax.set_xscale("log")
+    ax.set_xlabel(r"$\tau$ (lag)")
     ax.set_ylabel(r"subspace alignment with $Q[:,\,:k]$")
-    ax.set_title(rf"(c) DA recovers planted subspace; PCA at chance "
-                 rf"(DA@$\tau^\star$ $={da_align_at_tau_star:.3f}$)")
+    ax.set_title(rf"DA recovers planted subspace; PCA at chance", fontsize=9)
     ax.set_ylim(-0.05, 1.05)
-    ax.legend(fontsize=8, loc="best")
-    ax.grid(True, alpha=0.3)
-
-    fig.suptitle(
-        rf"Varying-rate planted spikes (no matched-V constraint): "
-        rf"$d={d}$, $k={k}$, $\gamma=d/N={d/N:.2f}$, $c={c_uniform}$, "
-        rf"$\sigma_s\in[{sigma_s_min},{sigma_s_max}]$ geometric",
-        y=1.01, fontsize=11,
-    )
-    fig.tight_layout()
+    ax.legend(fontsize=6.5, loc="center left")
 
     if out_path is None:
         out_path = HERE / "fig_planted_spikes_varying_rate.png"

@@ -35,3 +35,7 @@ experiments/noise_floor/parallel_ellipses/
 experiments/noise_floor/alanine/cluster/
 experiments/robustness/task1_sdxl_bootstrap/
 experiments/robustness/task2_alanine_lag/
+experiments_whitening/
+experiments/mc_dip_validation/
+experiments/peeled_rho/
+.agents/

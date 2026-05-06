@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 FIG_DIR = os.path.dirname(__file__)
 RESULTS_PATH = os.path.join(FIG_DIR, '..', 'experiments', 'ssa_truncation_redef',
-                             'results', 'gmm_10d_n200_all_sweeps.json')
+                             'results', 'gmm_10d_n200_all_sweeps_T200.json')
 
 FLOOR_KEY = '1N'  # use 1/N floor
 
@@ -29,12 +29,27 @@ def main():
 
     fig, axes = plt.subplots(1, 4, figsize=(14, 4.2))
 
+    # Clip ranges for converged points only
+    CLIP = {'sep_10d': (None, 6.0), 'var_10d': (0.75, None)}
+
     for col, (config, xlabel, title) in enumerate(sweep_configs):
         ax = axes[col]
         sw = data['sweeps'][config]
         params = np.array(sw['param_values'])
         ssa_arr = np.array(sw[f's_hat_{FLOOR_KEY}'])  # (10, n_params)
         mi_arr = np.array(sw['mi'])                    # (10, n_params)
+
+        # Apply clip ranges
+        if config in CLIP:
+            lo, hi = CLIP[config]
+            mask = np.ones(len(params), dtype=bool)
+            if lo is not None:
+                mask &= params >= lo
+            if hi is not None:
+                mask &= params <= hi
+            params = params[mask]
+            ssa_arr = ssa_arr[:, mask]
+            mi_arr = mi_arr[:, mask]
 
         ssa_mean = ssa_arr.mean(axis=0)
         ssa_sd = ssa_arr.std(axis=0)
@@ -69,6 +84,11 @@ def main():
             from matplotlib.ticker import MultipleLocator
             ax2.yaxis.set_major_locator(MultipleLocator(0.4))
             ax.set_xticks([1, 2, 3, 4, 5])
+            # Daggers on K=4,5 (unconverged in some seeds)
+            for ki in [3, 4]:  # indices for K=4, K=5
+                ax.annotate(r'$\dagger$', xy=(params[ki], ssa_mean[ki]),
+                            xytext=(0, 8), textcoords='offset points',
+                            fontsize=12, color='tab:blue', ha='center', weight='bold')
 
         if col == 0:
             lines1, labels1 = ax.get_legend_handles_labels()
@@ -78,7 +98,7 @@ def main():
 
     plt.tight_layout(pad=0.5)
     for ext in ['png', 'pdf']:
-        path = os.path.join(FIG_DIR, f'fig_gmm_sweeps_curves_10d.{ext}')
+        path = os.path.join(FIG_DIR, f'fig_gmm_sweeps_curves.{ext}')
         fig.savefig(path, dpi=300, bbox_inches='tight', facecolor='white')
         print(f"Saved {path}")
     plt.close(fig)

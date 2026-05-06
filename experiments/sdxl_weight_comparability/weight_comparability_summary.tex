@@ -1,0 +1,20 @@
+Weight-comparability summary (App.~H):
+
+Across all 14 prompts, the max/min ratio of the leading slow-mode weight
+$w_2 = \lambda_1(\hat C^{\mathrm{sym}}(T))/\operatorname{tr}\hat C(T)$ across the four
+guidance scales has median 2.4$\times$ and maximum
+5.9$\times$ (street); the two-mode fraction $w_2+w_3$ shows median
+2.6$\times$ and maximum 5.7$\times$.
+Restricting to the 6 prompts whose worst-case convergence proxy
+$\hat\rho^2(T)\cdot N$ exceeds $0.08$ at every scale
+(crane, car, mouse, palm, bat, mountains),
+the ratios tighten to median 1.8$\times$, max
+2.1$\times$ for $w_2$ and median 1.8$\times$,
+max 2.1$\times$ for $w_2+w_3$.
+The cleanest case is \textit{crane} ($R_{w_2}=1.36$),
+whose polysemy produces a single dominant slow mode with stable weight across
+all four scales; the noisiest near-converged prompt is
+\textit{mountains} ($R_{w_2}=2.07$),
+where the leading eigenvalue at $w=1$ is inflated by residual noise
+($\hat\rho^2 N=0.27$, closest to
+the floor among its four cells).

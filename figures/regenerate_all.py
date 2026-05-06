@@ -257,6 +257,17 @@ def make_fig_dispersion_vs_fragmentation():
         results.append((ssa, H))
         print(f"SSA={ssa:.2f}, H={H:.2f} nats")
 
+    # Save computed values to JSON for reproducibility auditing
+    dispersion_json = {
+        "gmm": {"ssa": float(results[0][0]), "entropy_nats": float(results[0][1])},
+        "blob": {"ssa": float(results[1][0]), "entropy_nats": float(results[1][1])},
+    }
+    os.makedirs(DATA_DIR, exist_ok=True)
+    disp_json_path = os.path.join(DATA_DIR, 'dispersion_values.json')
+    with open(disp_json_path, 'w') as f:
+        json.dump(dispersion_json, f, indent=2)
+    print(f"Saved {disp_json_path}")
+
     # Sample for histograms
     n = 5000
     labels = np.random.binomial(1, 0.5, n)
@@ -441,7 +452,7 @@ def make_fig_gmm_sweeps_snapshots():
 # FIGURE 6: Alanine DA vs TICA Ramachandran
 # =============================================================================
 def make_fig_alanine_da_tica():
-    """DA1 vs TICA1 Ramachandran using free-conv noise-floor τ*=362.6ps."""
+    """DA1 vs TICA1 vs PC1 Ramachandran using h/2 bandwidth at τ=10000ps."""
     setup_style()
     import matplotlib as mpl
     mpl.rcParams.update({
@@ -452,27 +463,27 @@ def make_fig_alanine_da_tica():
         'ytick.labelsize': 16,
         'legend.fontsize': 16,
     })
-    from matplotlib.ticker import MultipleLocator
+    from matplotlib.ticker import MultipleLocator, FixedLocator
     from scipy.stats import pearsonr
+    from scipy.linalg import eigh as scipy_eigh
 
     exp_dir = os.path.join(REPO_ROOT, 'experiments', 'da_directions')
+    ctau_dir = os.path.join(REPO_ROOT, 'experiments', 'save_autocovariance')
 
-    # DA from KDE convergence grid (free-conv τ*=362.6ps, idx=23)
-    kde_path = os.path.join(exp_dir, 'results', 'alanine_da_results_kde_convergence.npz')
-    kde = np.load(kde_path, allow_pickle=True)
+    # DA from h/2 full C(τ) at τ=10000ps (last lag of the 10k grid)
+    h2_path = os.path.join(ctau_dir, 'results', 'alanine_C_tau_full_h_half_10k.npz')
+    h2 = np.load(h2_path)
+    C_tau_10k = h2['C_tau'][-1]  # last lag = 10000ps
+    evals, evecs = scipy_eigh(C_tau_10k)
+    evals = evals[::-1]
+    evecs = evecs[:, ::-1]
+    da1_vec = evecs[:, 0]
 
-    # TICA from original GMM file (TICA is score-independent)
+    # TICA + PCA from original GMM file (score-independent)
     gmm_path = os.path.join(exp_dir, 'results', 'alanine_da_results_gmm_only.npz')
     gmm = np.load(gmm_path, allow_pickle=True)
 
-    phi = np.degrees(kde['gt_phi'])
-    psi = np.degrees(kde['gt_psi'])
-    tica1_proj = gmm['tica_proj'][:, 0]
-
-    # DA1 eigenvector at free-conv noise-floor τ*(m=2) = 362.6ps (idx=23)
-    da1_vec = kde['conv_top_k_eigenvectors'][23][:, 0]
-
-    # Load distances for projection
+    # Load distances + dihedrals
     all_dists = None
     for dd in [os.path.expanduser(
             '~/github/thesis/modality_score/autocorrelation-mixture-analysis/'
@@ -486,49 +497,70 @@ def make_fig_alanine_da_tica():
     if all_dists is None:
         raise FileNotFoundError("Alanine distance data not found")
 
+    dihed_f = os.path.join(dd, 'alanine-dipeptide-3x250ns-backbone-dihedrals.npz')
+    dihed_data = np.load(dihed_f)
+    all_diheds = np.concatenate([dihed_data[f'arr_{i}'] for i in range(3)])
+    phi = np.degrees(all_diheds[:, 0])
+    psi = np.degrees(all_diheds[:, 1])
+
+    tica1_proj = gmm['tica_proj'][:, 0]
+    pc1_proj = gmm['pca_proj'][:, 0]
+
     da1_proj = (all_dists - all_dists.mean(axis=0)) @ da1_vec
+    # Flip sign to match TICA1 orientation
+    if np.corrcoef(da1_proj, tica1_proj)[0, 1] < 0:
+        da1_proj = -da1_proj
 
     # Subsample for scatter plots (750k is too many points)
     rng = np.random.RandomState(42)
     idx = rng.choice(len(phi), size=50000, replace=False)
 
-    # ── Ramachandran figure (two panels) ──
-    fig, axes = plt.subplots(1, 2, figsize=(10, 3))
+    # Shift periodic boundary: cut at ψ = -110° (low-density region)
+    psi_cut = -110.0
+    psi_plot = ((psi - psi_cut) % 360) + psi_cut
 
-    # Left: DA1
-    ax = axes[0]
-    da1_plot = da1_proj[idx]
-    vmin, vmax = np.percentile(da1_plot, [2, 98])
-    sc = ax.scatter(
-        psi[idx], phi[idx], c=da1_plot, cmap='viridis',
-        s=0.5, alpha=0.3, vmin=vmin, vmax=vmax, rasterized=True,
-    )
-    cb = fig.colorbar(sc, ax=ax, shrink=0.8, pad=0.02)
-    cb.set_label('DA1 proj.')
-    ax.set_xlabel(r'$\psi$ (deg)')
-    ax.set_ylabel(r'$\phi$ (deg)')
-    ax.set_xlim(-180, 180)
-    ax.set_ylim(-180, 180)
-    ax.xaxis.set_major_locator(MultipleLocator(90))
-    ax.yaxis.set_major_locator(MultipleLocator(90))
+    # Flip PC1 sign for consistent visual direction
+    pc1_proj = -pc1_proj
 
-    # Right: TICA1
-    ax = axes[1]
-    vmin2, vmax2 = np.percentile(tica1_proj[idx], [2, 98])
-    sc2 = ax.scatter(
-        psi[idx], phi[idx], c=tica1_proj[idx], cmap='viridis',
-        s=0.5, alpha=0.3, vmin=vmin2, vmax=vmax2, rasterized=True,
-    )
-    cb2 = fig.colorbar(sc2, ax=ax, shrink=0.8, pad=0.02)
-    cb2.set_label('TICA1 proj.')
-    ax.set_xlabel(r'$\psi$ (deg)')
-    ax.set_ylabel(r'$\phi$ (deg)')
-    ax.set_xlim(-180, 180)
-    ax.set_ylim(-180, 180)
-    ax.xaxis.set_major_locator(MultipleLocator(90))
-    ax.yaxis.set_major_locator(MultipleLocator(90))
+    # ── Ramachandran figure (three panels: DA1, TICA1, PC1) ──
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
-    fig.tight_layout()
+    panels = [
+        (da1_proj, 'DA1', 'proj.'),
+        (tica1_proj, 'TICA1', 'proj.'),
+        (pc1_proj, 'PC1', 'proj.'),
+    ]
+
+    for i, (ax, (proj, title, cb_label)) in enumerate(zip(axes, panels)):
+        plot_vals = proj[idx]
+        vmin, vmax = np.percentile(plot_vals, [2, 98])
+        sc = ax.scatter(
+            psi_plot[idx], phi[idx], c=plot_vals, cmap='viridis',
+            s=0.5, alpha=0.3, vmin=vmin, vmax=vmax, rasterized=True,
+        )
+        cb = fig.colorbar(sc, ax=ax, shrink=0.8, pad=0.02)
+        if i == 1:  # TICA1 — force ticks to include positive end
+            from matplotlib.ticker import MaxNLocator
+            cb.locator = MaxNLocator(nbins=6)
+            cb.update_ticks()
+        if i == 2:  # rightmost panel
+            cb.set_label(cb_label)
+        panel_letter = ['(a)', '(b)', '(c)'][i]
+        ax.text(0.03, 0.95, f'{panel_letter} {title}', transform=ax.transAxes,
+                fontsize=18, fontweight='bold', va='top', ha='left')
+        ax.set_xlabel(r'$\psi$ (deg)')
+        if i == 0:  # leftmost panel
+            ax.set_ylabel(r'$\phi$ (deg)')
+        else:
+            ax.set_ylabel('')
+            ax.set_yticklabels([])
+        ax.set_xlim(psi_cut, psi_cut + 360)
+        ax.set_ylim(-180, 180)
+        ax.set_aspect('equal')
+        ax.xaxis.set_major_locator(FixedLocator([-90, 0, 90, 180]))
+        ax.yaxis.set_major_locator(MultipleLocator(90))
+
+    fig.subplots_adjust(wspace=0.02)
     path = os.path.join(FIG_DIR, 'fig_alanine_da_tica.png')
     plt.savefig(path)
     plt.savefig(path.replace('.png', '.pdf'))

@@ -21,6 +21,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from src.metrics.autocorrelation import aggregate_ssa
 
 
+def _load_free_conv_edges():
+    """Lazy-load the free-conv upper-edge function."""
+    import importlib.util as _ilu
+    repo_root = os.path.join(os.path.dirname(__file__), '..', '..', '..')
+    fc_path = os.path.join(repo_root, 'experiments', 'noise_floor',
+                           'free_conv_utils.py')
+    spec = _ilu.spec_from_file_location('free_conv_utils', fc_path)
+    mod = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.edges
+
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -156,7 +168,8 @@ class RealCLIPEmbedder:
 # ---------------------------------------------------------------------------
 
 def compute_ssa_da(z0, z_snapshots, lags, n_eigvals=10, n_eigvecs=3,
-                   ssa_min_lag=0, ssa_only=False, dt=None):
+                   ssa_min_lag=0, ssa_only=False, dt=None,
+                   freeconv_stop_M=None):
     """Compute SSA and DA from pre-computed embeddings (any dimension).
 
     Args:
@@ -167,11 +180,21 @@ def compute_ssa_da(z0, z_snapshots, lags, n_eigvals=10, n_eigvecs=3,
         n_eigvecs: number of top eigenvectors to keep per lag
         ssa_min_lag: only include lags >= this value when computing SSA mean
         ssa_only: if True, skip DA eigendecomposition (only compute SSA)
+        freeconv_stop_M: if int, apply free-conv stopping criterion: at each
+            lag compute the upper edge lambda_plus of the bulk (using
+            sigma_f^2 = mean per-dim variance of z0 and gamma=D/N) and stop
+            when lambda_2(C(tau)) < lambda_plus(tau) for M consecutive lags.
+            tau_star = lag just before the first crossing. Saves the full
+            symmetric autocovariance matrix C(tau_star) and full eigenspectrum
+            in the result for later eigenvalue-distribution analysis.
 
     Returns:
         dict with: mu, C0_trace, rho_sq (array), ssa (scalar),
         eigenvalues/eigenvectors per lag, gap profiles, DA1/DA2 optimal info
-        (DA fields are None when ssa_only=True)
+        (DA fields are None when ssa_only=True). When freeconv_stop_M is set
+        and ssa_only=False, also includes:
+          tau_star_freeconv, C_tau_star (D,D), eigenvalues_full (D,),
+          eigvecs_full_topk (D, k_full=20), freeconv_lambda_plus_profile
     """
     N, D = z0.shape
     mu = z0.mean(axis=0)
@@ -192,7 +215,25 @@ def compute_ssa_da(z0, z_snapshots, lags, n_eigvals=10, n_eigvecs=3,
 
     used_lags = [l for l in lags if l in z_snapshots]
 
-    for lag in used_lags:
+    # Free-conv stopping prep
+    fc_active = (freeconv_stop_M is not None) and (not ssa_only)
+    if fc_active:
+        # CLIP-space sigma_f: mean per-dim variance of z0 (centered).
+        sigma_f_sq = float((z0_c ** 2).sum() / (N * D))
+        sigma_f = float(np.sqrt(sigma_f_sq))
+        gamma = D / N
+        free_conv_edges = _load_free_conv_edges()
+        print(f"  Free-conv stopping: M={freeconv_stop_M}, sigma_f^2={sigma_f_sq:.3e}, gamma={gamma:.3f}")
+        fc_lambda_plus_list = []
+        fc_lambda2_list = []
+        fc_consec = 0
+        fc_first_cross_idx = None  # index into used_lags where first crossing occurs
+        fc_C_tau_star = None
+        fc_eigvals_full = None
+        fc_eigvecs_topk_full = None
+        fc_topk_full = 20
+
+    for i, lag in enumerate(used_lags):
         z_tau = z_snapshots[lag]
         z_tau_c = z_tau - mu
 
@@ -209,18 +250,47 @@ def compute_ssa_da(z0, z_snapshots, lags, n_eigvals=10, n_eigvecs=3,
             C_tau = 0.5 * (C_tau + C_tau.T)
 
             eigvals, eigvecs = torch.linalg.eigh(C_tau)
-            idx = eigvals.abs().argsort(descending=True)
-            eigvals = eigvals[idx].numpy()
-            eigvecs = eigvecs[:, idx].numpy()
+            idx = eigvals.argsort(descending=True)
+            eigvals_full_arr = eigvals[idx].numpy()
+            eigvecs_full_arr = eigvecs[:, idx].numpy()
 
-            eigenvalues_list.append(eigvals[:n_eigvals])
-            top_eigvecs_list.append(eigvecs[:, :n_eigvecs])
+            eigenvalues_list.append(eigvals_full_arr[:n_eigvals])
+            top_eigvecs_list.append(eigvecs_full_arr[:, :n_eigvecs])
 
-            abs_eig = np.abs(eigvals)
+            abs_eig = np.abs(eigvals_full_arr)
             g12 = abs_eig[0] / max(abs_eig[1], 1e-12)
             g23 = abs_eig[1] / max(abs_eig[2], 1e-12)
             gap12_list.append(g12)
             gap23_list.append(g23)
+
+            if fc_active:
+                tau_phys = lag * dt if dt is not None else lag
+                _, lam_plus = free_conv_edges(tau_phys, sigma_f, gamma=gamma)
+                lam2 = float(abs_eig[1])
+                fc_lambda_plus_list.append(float(lam_plus))
+                fc_lambda2_list.append(lam2)
+                if lam2 < lam_plus:
+                    fc_consec += 1
+                    if fc_consec >= freeconv_stop_M and fc_first_cross_idx is None:
+                        fc_first_cross_idx = i
+                        # tau_star = lag just before first crossing (i.e. previous index)
+                        prev_i = max(i - freeconv_stop_M, 0)
+                        # Snapshot full C(tau*), full eigvals, top-k eigvecs from prev iteration:
+                        # we already overwrote those tensors. Recompute at prev lag.
+                        prev_lag = used_lags[prev_i]
+                        z_tau_prev = z_snapshots[prev_lag] - mu
+                        z_prev_t = torch.from_numpy(z_tau_prev).float()
+                        C_prev = (z_prev_t.T @ z0_t) / N
+                        C_prev = 0.5 * (C_prev + C_prev.T)
+                        ev_prev, evec_prev = torch.linalg.eigh(C_prev)
+                        idx_prev = ev_prev.argsort(descending=True)
+                        fc_C_tau_star = C_prev.numpy().astype(np.float32)
+                        fc_eigvals_full = ev_prev[idx_prev].numpy().astype(np.float32)
+                        fc_eigvecs_topk_full = evec_prev[:, idx_prev[:fc_topk_full]].numpy().astype(np.float32)
+                        print(f"  Free-conv stop hit: lag={lag} (lambda2={lam2:.4e} < lambda+={lam_plus:.4e}), "
+                              f"tau_star_lag={prev_lag}")
+                else:
+                    fc_consec = 0
 
     rho_sq = np.array(rho_sq_list)
 
@@ -280,6 +350,44 @@ def compute_ssa_da(z0, z_snapshots, lags, n_eigvals=10, n_eigvecs=3,
         })
         print(f"  DA1: gap={gap12[opt1_idx]:.2f}x at lag={used_lags[opt1_idx]}")
         print(f"  DA2: gap={gap23[opt2_idx]:.2f}x at lag={used_lags[opt2_idx]}")
+
+        if fc_active:
+            # If the criterion never triggered, fall back to tau* = last lag
+            # and compute its full spectrum + C(tau*) for completeness.
+            if fc_first_cross_idx is None:
+                last_i = len(used_lags) - 1
+                last_lag = used_lags[last_i]
+                z_last = z_snapshots[last_lag] - mu
+                z_last_t = torch.from_numpy(z_last).float()
+                z0_t_local = torch.from_numpy(z0_c).float()
+                C_last = (z_last_t.T @ z0_t_local) / N
+                C_last = 0.5 * (C_last + C_last.T)
+                ev_l, evec_l = torch.linalg.eigh(C_last)
+                idx_l = ev_l.argsort(descending=True)
+                fc_C_tau_star = C_last.numpy().astype(np.float32)
+                fc_eigvals_full = ev_l[idx_l].numpy().astype(np.float32)
+                fc_eigvecs_topk_full = evec_l[:, idx_l[:fc_topk_full]].numpy().astype(np.float32)
+                tau_star_lag = last_lag
+                print(f"  Free-conv stop NEVER hit; fallback tau_star=T={last_lag}")
+            else:
+                tau_star_lag = used_lags[max(fc_first_cross_idx - freeconv_stop_M, 0)]
+
+            result.update({
+                "tau_star_freeconv": int(tau_star_lag),
+                "freeconv_M": int(freeconv_stop_M),
+                "freeconv_lambda_plus_profile": np.array(fc_lambda_plus_list),
+                "freeconv_lambda2_profile": np.array(fc_lambda2_list),
+                "freeconv_sigma_f_sq": float(sigma_f_sq),
+                "freeconv_gamma": float(gamma),
+                "C_tau_star": fc_C_tau_star,
+                "eigenvalues_full_at_tau_star": fc_eigvals_full,
+                "eigvecs_full_topk_at_tau_star": fc_eigvecs_topk_full,
+                "freeconv_first_cross_idx": (-1 if fc_first_cross_idx is None
+                                             else int(fc_first_cross_idx)),
+            })
+            print(f"  Free-conv: tau_star_lag={tau_star_lag}, "
+                  f"sigma_f^2={sigma_f_sq:.3e}, saved C(tau*) ({D}x{D}) "
+                  f"+ full {D} eigenvalues")
 
     return result
 

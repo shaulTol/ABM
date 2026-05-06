@@ -105,46 +105,43 @@ def main():
 
     # No sign flip — keep natural DA/TICA directions
 
+    # PC1 from pre-computed file (sign flipped for consistent visual direction)
+    pc1_proj = -gmm['pca_proj'][:, 0]
+
     # Subsample for scatter plots (750k is too many points)
     rng = np.random.RandomState(42)
     idx = rng.choice(len(phi), size=50000, replace=False)
 
-    # ── Ramachandran figure (two panels) ──
-    fig, axes = plt.subplots(1, 2, figsize=(8, 4))
+    # Shift periodic boundary: cut at ψ = -110° (low-density region)
+    psi_cut = -110.0
+    psi_plot = ((psi - psi_cut) % 360) + psi_cut
 
-    # Left: DA1 (sign flipped for visual comparison with TICA1)
-    ax = axes[0]
-    da1_plot = da1_proj[idx]
-    vmin, vmax = np.percentile(da1_plot, [2, 98])
-    sc = ax.scatter(
-        psi[idx], phi[idx], c=da1_plot, cmap='viridis',
-        s=0.5, alpha=0.3, vmin=vmin, vmax=vmax, rasterized=True,
-    )
-    cb = fig.colorbar(sc, ax=ax, shrink=0.8, pad=0.02)
-    cb.set_label('DA1 proj.')
-    # (sign flip is implicit, no annotation needed)
-    ax.set_xlabel(r'$\psi$ (deg)')
-    ax.set_ylabel(r'$\phi$ (deg)')
-    ax.set_xlim(-180, 180)
-    ax.set_ylim(-180, 180)
-    ax.xaxis.set_major_locator(MultipleLocator(90))
-    ax.yaxis.set_major_locator(MultipleLocator(90))
+    # ── Ramachandran figure (three panels: DA1, TICA1, PC1) ──
+    from matplotlib.ticker import FixedLocator
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
-    # Right: TICA1
-    ax = axes[1]
-    vmin2, vmax2 = np.percentile(tica1_proj[idx], [2, 98])
-    sc2 = ax.scatter(
-        psi[idx], phi[idx], c=tica1_proj[idx], cmap='viridis',
-        s=0.5, alpha=0.3, vmin=vmin2, vmax=vmax2, rasterized=True,
-    )
-    cb2 = fig.colorbar(sc2, ax=ax, shrink=0.8, pad=0.02)
-    cb2.set_label('TICA1 proj.')
-    ax.set_xlabel(r'$\psi$ (deg)')
-    ax.set_ylabel(r'$\phi$ (deg)')
-    ax.set_xlim(-180, 180)
-    ax.set_ylim(-180, 180)
-    ax.xaxis.set_major_locator(MultipleLocator(90))
-    ax.yaxis.set_major_locator(MultipleLocator(90))
+    panels = [
+        (da1_proj, 'DA1 proj.'),
+        (tica1_proj, 'TICA1 proj.'),
+        (pc1_proj, 'PC1 proj.'),
+    ]
+
+    for ax, (proj, cb_label) in zip(axes, panels):
+        plot_vals = proj[idx]
+        vmin, vmax = np.percentile(plot_vals, [2, 98])
+        sc = ax.scatter(
+            psi_plot[idx], phi[idx], c=plot_vals, cmap='viridis',
+            s=0.5, alpha=0.3, vmin=vmin, vmax=vmax, rasterized=True,
+        )
+        cb = fig.colorbar(sc, ax=ax, shrink=0.8, pad=0.02)
+        cb.set_label(cb_label)
+        ax.set_xlabel(r'$\psi$ (deg)')
+        ax.set_ylabel(r'$\phi$ (deg)')
+        ax.set_xlim(psi_cut, psi_cut + 360)
+        ax.set_ylim(-180, 180)
+        ax.set_aspect('equal')
+        ax.xaxis.set_major_locator(FixedLocator([-90, 0, 90, 180]))
+        ax.yaxis.set_major_locator(MultipleLocator(90))
 
     fig.tight_layout()
     outpath = os.path.join(FIGDIR, 'fig_alanine_da_tica.png')
