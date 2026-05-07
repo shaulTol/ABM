@@ -7,43 +7,36 @@ metastability.
 
 ## Algorithm Overview
 
-Given samples $X$ from an unknown density $f$, the method works in three stages:
+Given samples from an unknown density f, the method works in three stages:
 
 **Stage 1 — Canonical diffusion** (Algorithm 1, `cli/save_lags.py`).
-Run the isotropic Langevin SDE
-
-$$dX = \tfrac{\sigma_f^2}{2} \nabla \log f(X) \, dt + \sigma_f \, dW$$
-
-where $\sigma_f^2 = \operatorname{tr} \operatorname{Cov}(X)/d$. Collect $N$ trajectories, each of length $T$.
-Compute the symmetrized autocovariance $C_{\text{sym}}(\tau) = (C(\tau) + C(\tau)^\top)/2$
+Run the isotropic Langevin SDE:  *dX = (σ²_f / 2) ∇log f(X) dt + σ_f dW*,
+where σ²_f = tr(Cov(X)) / d. Collect N trajectories, each of length T.
+Compute the symmetrized autocovariance C_sym(τ) = (C(τ) + C(τ)ᵀ) / 2
 at a grid of lags.
 
 **Stage 2a — SSA** (`cli/compute_ssa.py`).
 At each lag compute the trace-normalized autocorrelation
-
-$$\hat{\rho}(\tau_\ell) = \frac{\operatorname{tr} \hat{C}(\tau_\ell)}{\operatorname{tr} \hat{C}(0)}$$
-
-Truncate at the stopping lag $T_{\max}$ where $\hat{\rho}(\tau)^2$ hits the $1/N$ noise floor. Sum:
-
-$$\hat{S} = \Delta t \sum_{\ell=0}^{L_{\max}} \hat{\rho}(\ell \Delta t)^2$$
-
-This is a scalar in $[0, \infty)$ that is zero for unimodal distributions and grows with mode separation.
+ρ̂(τ) = tr Ĉ(τ) / tr Ĉ(0).
+Truncate at the stopping lag where ρ̂(τ)² hits the 1/N noise floor. Sum:
+**Ŝ = Δt · Σ ρ̂(ℓΔt)²**.
+This is a scalar in [0, ∞) that is zero for unimodal distributions and grows with mode separation.
 
 **Stage 2b — DA directions** (`cli/compute_da.py`).
-Pick $\tau^\*$ where the second eigenvalue crosses the noise floor. The eigenvectors
-of $C_{\text{sym}}(\tau^\*)$ are the DA directions, ordered by metastability. DA1 points
-along the slowest-mixing axis of $f$.
+Pick τ\* where the second eigenvalue crosses the noise floor. The eigenvectors
+of C_sym(τ\*) are the DA directions, ordered by metastability. DA1 points
+along the slowest-mixing axis of f.
 
 ### Code ↔ Paper Mapping
 
 | Paper | Code | Description |
 |-------|------|-------------|
-| Algorithm 1 | `cli/save_lags.py` | Langevin simulation + $C_{\text{sym}}(\tau)$ computation |
+| Algorithm 1 | `cli/save_lags.py` | Langevin simulation + C_sym(τ) computation |
 | Eq. 3 (SSA) | `cli/compute_ssa.py` | Riemann-sum estimator with noise floor |
-| Def. 3 (DA) | `cli/compute_da.py` | Eigenvectors of $C_{\text{sym}}(\tau^\*)$ |
-| Theorem 2 (noise floor) | `src/noise_floor/free_conv_utils.py` | Free-convolution upper edge $\lambda\_+(\tau)$ |
+| Def. 3 (DA) | `cli/compute_da.py` | Eigenvectors of C_sym(τ\*) |
+| Theorem 2 (noise floor) | `src/noise_floor/free_conv_utils.py` | Free-convolution upper edge λ₊(τ) |
 | Langevin integrator | `src/simulation/langevin.py` | Euler-Maruyama SDE solver |
-| KDE score estimator | `src/kde/kde_score.py` | $\nabla \log \hat{f}$ for tabular data |
+| KDE score estimator | `src/kde/kde_score.py` | ∇log f̂ for tabular data |
 | DDPM score (SDXL) | `experiments/sdxl/sdxl_components.py` | Tweedie denoiser as score oracle |
 
 ## Setup
