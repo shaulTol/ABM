@@ -43,8 +43,6 @@ experiments/save_autocovariance/results/
 
 # Misc
 docs/
-.agents/
-audits/
 
 # Track small JSON/CSV result files
 !experiments/*/results/*.json
