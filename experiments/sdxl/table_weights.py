@@ -3,7 +3,7 @@ import json, numpy as np, os
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-with open(os.path.join(SCRIPT_DIR, 'weight_table.json')) as f:
+with open(os.path.join(SCRIPT_DIR, 'results', 'weight_table.json')) as f:
     data = json.load(f)
 
 # Parse into prompt -> {gs -> metrics}
