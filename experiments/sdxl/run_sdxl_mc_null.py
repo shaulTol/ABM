@@ -113,7 +113,7 @@ def main():
     parser.add_argument('--guidance_scale', type=float, default=7.5)
     parser.add_argument('--n_eigvals', type=int, default=10)
     parser.add_argument('--latents_path', type=str,
-                        default='../sdxl/results_da_pcavda/clip_da_latents_elderly_gs7p5.npz')
+                        default='results/clip_da_latents_elderly_gs7p5.npz')
     parser.add_argument('--output_dir', type=str, default='results')
     parser.add_argument('--score_batch_size', type=int, default=16)
     parser.add_argument('--clip_batch_size', type=int, default=4)

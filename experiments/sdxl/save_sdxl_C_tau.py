@@ -8,11 +8,11 @@ computes full 768x768 C_tau_sym at each of ~111 snapshot lags.
 Usage:
     # N=200 (resume from checkpoint):
     python save_sdxl_C_tau.py --n_samples 200 \
-        --resume_checkpoint ../sdxl/results_multiprompt_sweep/langevin_ckpt_mp_p5_elderly_gs7p5.npz
+        --resume_checkpoint results/langevin_ckpt_mp_p5_elderly_gs7p5.npz
 
     # N=1000 (re-run Langevin from x0):
     python save_sdxl_C_tau.py --n_samples 1000 \
-        --resume_x0 ../sdxl/results_multiprompt_sweep/gen_mp_p5_elderly_gs7p5_x0.npz
+        --resume_x0 results/gen_mp_p5_elderly_gs7p5_x0.npz
 
 Output: results/elderly_gs7p5_n{N}_C_tau_full.npz
 """

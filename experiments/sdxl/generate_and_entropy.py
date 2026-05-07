@@ -10,7 +10,7 @@ Usage:
         --prompt "a superrealistic professional photograph of a person" \
         --guidance_scale 7.5 --gen_steps 50 \
         --n_samples 2000 --height 1024 --width 1024 \
-        --name gs7p5 --output_dir results_guidance_sweep
+        --name gs7p5 --output_dir results
 """
 
 import os

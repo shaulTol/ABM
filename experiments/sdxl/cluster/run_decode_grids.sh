@@ -6,8 +6,8 @@
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
 #SBATCH --array=0-27
-#SBATCH --output=results_multiprompt_sweep/decode_%a_%j.out
-#SBATCH --error=results_multiprompt_sweep/decode_%a_%j.err
+#SBATCH --output=results/decode_%a_%j.out
+#SBATCH --error=results/decode_%a_%j.err
 
 export PYTHONUNBUFFERED=1
 export PATH=/usr/local/spack/opt/spack/linux-debian12-x86_64/gcc-12.2.0/miniconda3-24.3.0-iqeknetqo7ngpr57d6gmu3dg4rzlcgk6/bin:$PATH
@@ -31,15 +31,15 @@ PROMPT_LABEL="${PROMPT_LABELS[$PROMPT_IDX]}"
 GS_LABEL="${GS_LABELS[$GS_IDX]}"
 
 NAME="mp_p${PROMPT_IDX}_${PROMPT_LABEL}_${GS_LABEL}"
-OUTDIR="results_multiprompt_sweep/grids/p${PROMPT_IDX}_${PROMPT_LABEL}"
+OUTDIR="results/grids/p${PROMPT_IDX}_${PROMPT_LABEL}"
 mkdir -p "$OUTDIR"
 
 echo "=== Decode task $SLURM_ARRAY_TASK_ID: $NAME ==="
 echo "Host: $(hostname)"
 echo "Start: $(date)"
 
-python -u ../shared/decode_all_grids.py \
-    --latents_npz results_multiprompt_sweep/gen_${NAME}_quick_x0.npz \
+python -u decode_all_grids.py \
+    --latents_npz results/gen_${NAME}_quick_x0.npz \
     --model_id stabilityai/stable-diffusion-xl-base-1.0 \
     --latent_h 128 --latent_w 128 \
     --batch_size 1 \

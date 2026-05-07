@@ -27,6 +27,7 @@ export LD_LIBRARY_PATH=/sci/home/shaulytolk/.local/lib/python3.12/site-packages/
 export LD_LIBRARY_PATH=/sci/labs/orzuk/shaulytolk/thesis_zuk_shaul/ssa_env/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH
 
 # --- Run ---
-cd /sci/labs/orzuk/shaulytolk/ABM
+EXPDIR=/sci/labs/orzuk/shaulytolk/ABM/experiments/alanine
+cd $EXPDIR
 
-python -u experiments/save_autocovariance/save_alanine_C_tau_h_half_10k.py
+python -u save_alanine_C_tau.py

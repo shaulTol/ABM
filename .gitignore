@@ -44,7 +44,7 @@ experiments/save_autocovariance/results/
 # Misc
 docs/
 .agents/
-audits/old_to_new_mapping.md
+audits/
 
 # Track small JSON/CSV result files
 !experiments/*/results/*.json

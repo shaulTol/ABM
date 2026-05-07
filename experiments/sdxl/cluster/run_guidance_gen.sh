@@ -6,8 +6,8 @@
 #SBATCH --mem=48G
 #SBATCH --cpus-per-task=4
 #SBATCH --array=0-27
-#SBATCH --output=results_multiprompt_sweep/gen_%a_%j.out
-#SBATCH --error=results_multiprompt_sweep/gen_%a_%j.err
+#SBATCH --output=results/logs/gen_%a_%j.out
+#SBATCH --error=results/logs/gen_%a_%j.err
 
 export PYTHONUNBUFFERED=1
 export PATH=/usr/local/spack/opt/spack/linux-debian12-x86_64/gcc-12.2.0/miniconda3-24.3.0-iqeknetqo7ngpr57d6gmu3dg4rzlcgk6/bin:$PATH
@@ -21,7 +21,7 @@ export HF_HOME=/sci/labs/orzuk/shaulytolk/.cache/huggingface
 export HF_TOKEN_PATH=/dev/null
 cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 
-mkdir -p results_multiprompt_sweep
+mkdir -p results/logs
 
 PROMPTS=(
     "a photograph of a cat sitting on a windowsill"
@@ -61,6 +61,6 @@ python generate_and_entropy.py \
     --clip_batch_size 4 \
     --seed 42 \
     --name "$NAME" \
-    --output_dir results_multiprompt_sweep
+    --output_dir results
 
 echo "Done task $SLURM_ARRAY_TASK_ID: $(date)"

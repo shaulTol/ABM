@@ -1,12 +1,12 @@
 """Plot multi-prompt guidance sweep results.
 
-Reads per-(prompt, guidance) JSONs from results_multiprompt_sweep/ and makes:
+Reads per-(prompt, guidance) JSONs from results/ and makes:
 1. Per-prompt dual-axis bar charts (SSA vs entropy) — same style as fig_sdxl_ssa_vs_entropy
 2. Aggregate figure showing argmax-SSA and argmax-entropy guidance scales across prompts
 3. Summary table
 
 Usage:
-    python scripts/plot_multiprompt_sweep.py [--results_dir results_multiprompt_sweep]
+    python fig_sdxl_guidance.py [--results_dir results]
 """
 import os
 import json

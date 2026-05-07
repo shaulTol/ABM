@@ -5,8 +5,8 @@
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
 #SBATCH --time=0:30:00
-#SBATCH --output=/sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl/results_traj_averaged/logs/decode_crane_%j.out
-#SBATCH --error=/sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl/results_traj_averaged/logs/decode_crane_%j.err
+#SBATCH --output=results/logs/decode_crane_%j.out
+#SBATCH --error=results/logs/decode_crane_%j.err
 
 export PYTHONUNBUFFERED=1
 export PATH=/usr/local/spack/opt/spack/linux-debian12-x86_64/gcc-12.2.0/miniconda3-24.3.0-iqeknetqo7ngpr57d6gmu3dg4rzlcgk6/bin:$PATH
@@ -26,6 +26,6 @@ export LD_LIBRARY_PATH=/sci/home/shaulytolk/.local/lib/python3.12/site-packages/
 export LD_LIBRARY_PATH=/sci/home/shaulytolk/.local/lib/python3.12/site-packages/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=/sci/labs/orzuk/shaulytolk/thesis_zuk_shaul/ssa_env/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH
 
-cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl/results_traj_averaged
+cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 
-python -u decode_crane_extremes.py
+python -u fig_crane_extremes.py

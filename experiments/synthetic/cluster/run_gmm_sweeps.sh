@@ -24,7 +24,7 @@ export LD_LIBRARY_PATH=/sci/home/shaulytolk/.local/lib/python3.12/site-packages/
 export LD_LIBRARY_PATH=/sci/home/shaulytolk/.local/lib/python3.12/site-packages/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=/sci/labs/orzuk/shaulytolk/thesis_zuk_shaul/ssa_env/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH
 
-EXPDIR=/sci/labs/orzuk/shaulytolk/ABM/experiments/ssa_truncation_redef
+EXPDIR=/sci/labs/orzuk/shaulytolk/ABM/experiments/synthetic
 cd $EXPDIR
 
-python -u code/run_gmm_10d_all_sweeps.py
+python -u compute_gmm_sweeps.py

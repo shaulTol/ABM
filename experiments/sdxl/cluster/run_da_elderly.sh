@@ -5,8 +5,8 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --mem=48G
 #SBATCH --cpus-per-task=4
-#SBATCH --output=results_da_pcavda/da_eld_fc_%j.out
-#SBATCH --error=results_da_pcavda/da_eld_fc_%j.err
+#SBATCH --output=results/da_eld_fc_%j.out
+#SBATCH --error=results/da_eld_fc_%j.err
 
 export PYTHONUNBUFFERED=1
 export PATH=/usr/local/spack/opt/spack/linux-debian12-x86_64/gcc-12.2.0/miniconda3-24.3.0-iqeknetqo7ngpr57d6gmu3dg4rzlcgk6/bin:$PATH
@@ -18,13 +18,13 @@ export LD_LIBRARY_PATH=/sci/home/shaulytolk/.local/lib/python3.12/site-packages/
 export LD_LIBRARY_PATH=/sci/labs/orzuk/shaulytolk/thesis_zuk_shaul/ssa_env/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH
 export HF_HOME=/sci/labs/orzuk/shaulytolk/.cache/huggingface
 export HF_TOKEN_PATH=/dev/null
-cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl/elderly_da
+cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 
-mkdir -p results_da_pcavda
+mkdir -p results
 
 PROMPT="a portrait of an elderly person"
 NAME="elderly_gs7p5_fc_dt0p0025"
-RESUME_X0="../guidance_sweep/results_multiprompt_sweep/gen_mp_p5_elderly_gs7p5_quick_x0.npz"
+RESUME_X0="results/gen_mp_p5_elderly_gs7p5_quick_x0.npz"
 
 echo "=== DA elderly free-conv stopping ==="
 echo "Prompt: $PROMPT"
@@ -34,7 +34,7 @@ echo "Start: $(date)"
 
 # dt=0.0025 with T=2000 -> 5x further in physical time than the dt=0.0005
 # baseline. Reuses the same x0 latents; Langevin is re-run with the new dt.
-python ../guidance_sweep/run_ssa_da_clip.py \
+python run_ssa_da_clip.py \
     --model_id stabilityai/stable-diffusion-xl-base-1.0 \
     --name "$NAME" \
     --prompt "$PROMPT" \
@@ -48,6 +48,6 @@ python ../guidance_sweep/run_ssa_da_clip.py \
     --compute_entropy \
     --score_batch_size 16 \
     --clip_batch_size 4 \
-    --output_dir results_da_pcavda
+    --output_dir results
 
 echo "Done: $(date)"

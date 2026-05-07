@@ -5,8 +5,8 @@
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=48G
 #SBATCH --cpus-per-task=4
-#SBATCH --output=/sci/labs/orzuk/shaulytolk/ABM/experiments/save_autocovariance/results/sdxl_ctau_n200_%j.out
-#SBATCH --error=/sci/labs/orzuk/shaulytolk/ABM/experiments/save_autocovariance/results/sdxl_ctau_n200_%j.err
+#SBATCH --output=results/sdxl_ctau_n200_%j.out
+#SBATCH --error=results/sdxl_ctau_n200_%j.err
 
 export PYTHONUNBUFFERED=1
 export PATH=/usr/local/spack/opt/spack/linux-debian12-x86_64/gcc-12.2.0/miniconda3-24.3.0-iqeknetqo7ngpr57d6gmu3dg4rzlcgk6/bin:$PATH
@@ -18,13 +18,13 @@ export LD_LIBRARY_PATH=/sci/home/shaulytolk/.local/lib/python3.12/site-packages/
 export LD_LIBRARY_PATH=/sci/labs/orzuk/shaulytolk/thesis_zuk_shaul/ssa_env/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH
 export HF_HOME=/sci/labs/orzuk/shaulytolk/.cache/huggingface
 export HF_TOKEN_PATH=/dev/null
-cd /sci/labs/orzuk/shaulytolk/ABM/experiments/save_autocovariance
+cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 
 echo "=== SDXL C_tau N=200: $(hostname), GPU=$CUDA_VISIBLE_DEVICES ==="
 echo "Start: $(date)"
 
-CHECKPOINT="../sdxl/results_multiprompt_sweep/langevin_ckpt_mp_p5_elderly_gs7p5.npz"
-RESUME_X0="../sdxl/results_multiprompt_sweep/gen_mp_p5_elderly_gs7p5_quick_x0.npz"
+CHECKPOINT="results/langevin_ckpt_mp_p5_elderly_gs7p5.npz"
+RESUME_X0="results/gen_mp_p5_elderly_gs7p5_quick_x0.npz"
 
 if [ -f "$CHECKPOINT" ]; then
     echo "Resuming from checkpoint: $CHECKPOINT"

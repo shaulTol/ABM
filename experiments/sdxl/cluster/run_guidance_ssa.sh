@@ -6,8 +6,8 @@
 #SBATCH --mem=48G
 #SBATCH --cpus-per-task=4
 #SBATCH --array=0-27
-#SBATCH --output=results_multiprompt_sweep/ssa_%a_%j.out
-#SBATCH --error=results_multiprompt_sweep/ssa_%a_%j.err
+#SBATCH --output=results/logs/ssa_%a_%j.out
+#SBATCH --error=results/logs/ssa_%a_%j.err
 
 export PYTHONUNBUFFERED=1
 export PATH=/usr/local/spack/opt/spack/linux-debian12-x86_64/gcc-12.2.0/miniconda3-24.3.0-iqeknetqo7ngpr57d6gmu3dg4rzlcgk6/bin:$PATH
@@ -21,7 +21,7 @@ export HF_HOME=/sci/labs/orzuk/shaulytolk/.cache/huggingface
 export HF_TOKEN_PATH=/dev/null
 cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 
-mkdir -p results_multiprompt_sweep
+mkdir -p results/logs
 
 PROMPTS=(
     "a photograph of a cat sitting on a windowsill"
@@ -57,7 +57,7 @@ python run_ssa_da_clip.py \
     --prompt "$PROMPT" \
     --guidance_scale "$GS" --gen_steps 50 \
     --height 1024 --width 1024 \
-    --resume_x0 "results_multiprompt_sweep/gen_${NAME}_quick_x0.npz" \
+    --resume_x0 "results/gen_${NAME}_quick_x0.npz" \
     --n_samples 200 --n_traj 200 \
     --T 2000 --dt 0.0005 --t_score 1 \
     --snapshot_schedule log_and_fixed \
@@ -65,6 +65,6 @@ python run_ssa_da_clip.py \
     --compute_entropy \
     --score_batch_size 16 \
     --clip_batch_size 4 \
-    --output_dir results_multiprompt_sweep
+    --output_dir results
 
 echo "Done task $SLURM_ARRAY_TASK_ID: $(date)"

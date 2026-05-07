@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Compute C(0) top eigenvalues + trace for elderly free-conv run.
-Saves to results_da_pcavda/c0_eigvals_elderly_gs7p5_fc_dt0p0025.npz."""
+Saves to results/c0_eigvals_elderly_gs7p5_fc_dt0p0025.npz."""
 
 import os, sys
 import numpy as np

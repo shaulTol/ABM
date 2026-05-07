@@ -6,8 +6,8 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --time=12:00:00
 #SBATCH --array=0-23
-#SBATCH --output=/sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl/results_traj_averaged/logs/phase_d_%a_%j.out
-#SBATCH --error=/sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl/results_traj_averaged/logs/phase_d_%a_%j.err
+#SBATCH --output=results/logs/phase_d_%a_%j.out
+#SBATCH --error=results/logs/phase_d_%a_%j.err
 
 # Phase D: CLIP embedding + trajectory-averaged SSA for 24 extended prompt cells.
 # These already have dt=0.005 Langevin checkpoints — only need embed + recompute.
@@ -28,7 +28,7 @@ export HF_TOKEN_PATH=/dev/null
 cd /sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl
 
 # 24 cells: 6 extended prompts × 4 guidance scales
-# Checkpoints exist at: ../sdxl_extended_prompts/langevin_ckpt_ext_p*_dt0p005.npz
+# Checkpoints exist at: results/langevin_ckpt_ext_p*_dt0p005.npz
 PROMPT_LABELS=(bat crane mouse seal jaguar palm)
 GS_LABELS=(gs1p0 gs3p0 gs7p5 gs15p0)
 
@@ -41,7 +41,7 @@ GSLABEL="${GS_LABELS[$GS_IDX]}"
 NAME="ext_p${PROMPT_IDX}_${PLABEL}_${GSLABEL}_dt0p005"
 
 # Find checkpoint
-CKPT_DIR="../sdxl_extended_prompts"
+CKPT_DIR="results"
 CKPT="${CKPT_DIR}/langevin_ckpt_ext_p${PROMPT_IDX}_${PLABEL}_${GSLABEL}_dt0p005.npz"
 
 if [ ! -f "$CKPT" ]; then
@@ -59,11 +59,11 @@ echo "=== Phase D: Embed + Traj-Avg SSA ==="
 echo "Cell: $NAME"
 echo "Checkpoint: $CKPT"
 
-python results_traj_averaged/recompute_traj_averaged.py \
+python traj_averaged_pipeline.py \
     --checkpoint "$CKPT" \
     --dt 0.005 --T 2000 \
     --name "$NAME" \
-    --output_dir results_traj_averaged \
+    --output_dir results \
     --save_clip_traj
 
 echo "Done: $NAME"

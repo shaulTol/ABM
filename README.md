@@ -1,4 +1,4 @@
-# SSA Paper — Reproduction Guide
+# ABM — Autocovariance Based Multimodality-Measure
 
 Code for *"Measuring and Decomposing Multimodality via Canonical Diffusions"*.
 
@@ -373,3 +373,48 @@ rsync -avz -e 'ssh -p 2222' \
 
 All small JSON/CSV result files (~1.5 MB total) are tracked in git.
 Binary NPZ files are gitignored; sync from cluster or regenerate via SLURM.
+
+---
+
+## Compute Requirements for Reproduction
+
+All experiments run on single-GPU SLURM jobs on the HUJI Moriah cluster.
+No multi-GPU or distributed training is required.
+
+### Hardware
+
+| Partition | GPU | Memory | Used for |
+|-----------|-----|--------|----------|
+| salmon | NVIDIA L40S 48GB | 32–48 GB | SDXL Langevin, DA extraction, image decode |
+| catfish | NVIDIA L4 | 16–32 GB | Synthetic GMM sweeps, alanine KDE-DA, baselines |
+| (any) | CPU only | 16 GB | On-the-fly figures, bootstrap resampling, baselines |
+
+### Per-experiment compute
+
+| Experiment | Hardware | Array jobs | Est. GPU-hrs |
+|---|---|---|---|
+| SDXL guidance sweep SSA (Fig 3) | L40S | 28 | 532 |
+| SDXL guidance generation + entropy (Fig 3) | L40S | 28 | 196 |
+| SDXL traj-averaged recompute (Table 1) | L40S | 24 | 192 |
+| SDXL MC null (Table 4 SDXL) | L40S | 3 | 57 |
+| SDXL bootstrap CIs (Table 1) | L40S | 59 | 30 |
+| SDXL elderly DA (Fig 4) | L40S | 1 | 24 |
+| SDXL C(τ) (Fig A7) | L40S | 1 | 20 |
+| SDXL decode grids + crane | L40S | 29 | 15 |
+| GMM sweeps + random + dt-robust (Fig 1, A2, A3) | L4 | 3 | 24 |
+| Alanine KDE-DA (Fig 5) | L40S | 1 | 6 |
+| Alanine C(τ) + null + baselines | L4 | 12 | 5 |
+| On-the-fly figures (Fig 2a–b, A0, A9–A14) | CPU | — | <1 |
+| **Total** | | | **~1,100** |
+
+SDXL Langevin is the dominant cost (~950 of ~1,100 GPU-hours). Each
+guidance-scale cell runs N=200 trajectories × T=2000 UNet forward passes at
+1024×1024 resolution, taking ~19 hours on L40S.
+
+### Minimal reproduction
+
+To regenerate **figures only** from pre-computed results (tracked JSON/CSV +
+synced NPZ): CPU-only, completes in minutes. No GPU needed.
+
+To regenerate **all results from scratch**: ~1,100 GPU-hours on L40S-class
+hardware, dominated by the 28-cell SDXL guidance sweep.

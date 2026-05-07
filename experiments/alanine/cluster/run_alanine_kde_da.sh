@@ -18,7 +18,7 @@ for d in cublas cuda_cupti cuda_nvrtc cuda_runtime cudnn cufft cusolver cusparse
 done
 export LD_LIBRARY_PATH=/sci/labs/orzuk/shaulytolk/thesis_zuk_shaul/ssa_env/lib/python3.12/site-packages/torch/lib:$LD_LIBRARY_PATH
 
-EXPDIR=/sci/labs/orzuk/shaulytolk/thesis_zuk_shaul/modality_score/autocorrelation-mixture-analysis/experiments/da_directions
+EXPDIR=/sci/labs/orzuk/shaulytolk/ABM/experiments/alanine
 
 cd "$EXPDIR"
 

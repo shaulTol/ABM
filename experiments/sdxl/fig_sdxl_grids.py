@@ -8,7 +8,7 @@ Right square: 4 rows × 5 cols (DA1 high, DA1 low, [gap], PC1 high, PC1 low)
 
 Sources (read-only):
   figures/fig_sdxl_guidance_grid_1.png — person thumbnails
-  experiments/sdxl/results_da_pcavda/fig_elderly_da_vs_pca_freeconv_taustar_hires.png
+  experiments/sdxl/results/fig_elderly_da_vs_pca_freeconv_taustar_hires.png
 """
 import os
 import matplotlib
