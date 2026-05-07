@@ -133,7 +133,7 @@ sbatch experiments/synthetic/cluster/run_ellipses_null.sh
 
 ### SDXL Guidance Sweep (Section 7.2)
 
-**SSA across 7 prompts x 4 guidance scales** (Fig 3, Table 1):
+**SSA across 14 prompts x 4 guidance scales** (Fig 3, Table 1):
 ```bash
 # Step 1: Generate x0 latents + compute entropy (GPU, array 0-27, ~7h each):
 sbatch experiments/sdxl/cluster/run_guidance_gen.sh
