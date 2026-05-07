@@ -1,9 +1,42 @@
-# ABM — Autocovariance Based Multimodality-Measure
+# Measuring and Decomposing Mode Separation via the Canonical Diffusion
 
-Code for *"Measuring and Decomposing Multimodality via Canonical Diffusions"*.
+Code repository for the paper. Implements **SSA** (Sum of Squared
+Autocorrelations), a scalar multimodality measure, and **DA** (Dominant
+Autocorrelation) directions, a directional decomposition ordered by
+metastability.
 
-**SSA** (Sum of Squared Autocorrelations): scalar multimodality measure.
-**DA** (Dominant Autocorrelation) directions: directional decomposition ordered by metastability.
+## Algorithm Overview
+
+Given samples X from an unknown density f, the method works in three stages:
+
+**Stage 1 — Canonical diffusion** (Algorithm 1, `cli/save_lags.py`).
+Run the isotropic Langevin SDE dX = (sigma_f^2 / 2) nabla log f(X) dt + sigma_f dW,
+where sigma_f^2 = tr Cov(X) / d. Collect N trajectories, each of length T.
+Compute the symmetrized autocovariance C_sym(tau) = (C(tau) + C(tau)^T) / 2
+at a grid of lags.
+
+**Stage 2a — SSA** (`cli/compute_ssa.py`).
+Eigendecompose C_sym(tau) at each lag. Normalize: rho_j(tau) = lambda_j(tau) / sigma_f^2.
+Truncate at the free-convolution noise floor lambda_+(tau). Sum:
+S-hat = dt * sum_{tau <= tau*} sum_j rho_j(tau)^2. This is a scalar in [0, infty)
+that is zero for unimodal distributions and grows with mode separation.
+
+**Stage 2b — DA directions** (`cli/compute_da.py`).
+Pick tau* where the second eigenvalue crosses the noise floor. The eigenvectors
+of C_sym(tau*) are the DA directions, ordered by metastability. DA1 points
+along the slowest-mixing axis of f.
+
+### Code ↔ Paper Mapping
+
+| Paper | Code | Description |
+|-------|------|-------------|
+| Algorithm 1 | `cli/save_lags.py` | Langevin simulation + C_sym(tau) computation |
+| Eq. 3 (SSA) | `cli/compute_ssa.py` | Riemann-sum estimator with noise floor |
+| Def. 3 (DA) | `cli/compute_da.py` | Eigenvectors of C_sym(tau*) |
+| Theorem 2 (noise floor) | `src/noise_floor/free_conv_utils.py` | Free-convolution upper edge lambda_+(tau) |
+| Langevin integrator | `src/simulation/langevin.py` | Euler-Maruyama SDE solver |
+| KDE score estimator | `src/kde/kde_score.py` | nabla log f-hat for tabular data |
+| DDPM score (SDXL) | `experiments/sdxl/sdxl_components.py` | Tweedie denoiser as score oracle |
 
 ## Setup
 
@@ -15,8 +48,7 @@ pip install -r requirements.txt
 
 ### Cluster Configuration
 
-SLURM scripts and rsync commands use placeholders. Before running, set these
-environment variables or replace them in the scripts:
+SLURM scripts use placeholders. Replace them before running:
 
 | Placeholder | Meaning | Example |
 |-------------|---------|---------|
@@ -26,347 +58,205 @@ environment variables or replace them in the scripts:
 | `<CONDA_ENV>` | Absolute path to conda environment | `/scratch/jdoe/envs/ssa_env` |
 | `<CONDA_SH>` | Path to `conda.sh` activation script | `/opt/miniconda3/etc/profile.d/conda.sh` |
 | `<CONDA_BIN>` | Path to conda `bin/` directory | `/opt/miniconda3/bin` |
-| `<NV_SITE_PACKAGES>` | nvidia packages in conda env's site-packages | `<CONDA_ENV>/lib/python3.12/site-packages/nvidia` |
-| `<USER_SITE_PACKAGES>` | User-installed nvidia packages (nccl, nvjitlink) | `~/.local/lib/python3.12/site-packages/nvidia` |
+| `<NV_SITE_PACKAGES>` | nvidia packages in site-packages | `<CONDA_ENV>/lib/python3.12/site-packages/nvidia` |
+| `<USER_SITE_PACKAGES>` | User-installed nvidia packages | `~/.local/lib/python3.12/site-packages/nvidia` |
 | `<TORCH_LIB>` | PyTorch shared libraries | `<CONDA_ENV>/lib/python3.12/site-packages/torch/lib` |
-| `<HF_CACHE>` | Hugging Face model cache directory | `~/.cache/huggingface` |
+| `<HF_CACHE>` | Hugging Face model cache | `~/.cache/huggingface` |
 
 ## Repository Structure
 
 ```
-src/                    Core library (metrics, simulation, KDE, noise floor, plotting)
-cli/                    Shared pipeline: save_lags → compute_ssa / compute_da
+src/                    Core library
+  metrics/              SSA, DA, autocorrelation
+  simulation/           Langevin integrator
+  kde/                  KDE score estimator
+  noise_floor/          Free-convolution density and noise floor
+  plotting/             Shared figure styling
+cli/                    Shared pipeline (Algorithm 1 → SSA / DA)
 experiments/
-  synthetic/            GMM sweeps, planted spikes, ellipses, free-conv, dt-robustness
-  sdxl/                 Guidance sweep, elderly DA, crane, MC null, bootstrap
-  alanine/              KDE-DA, baselines (sparse K-means, spectral map, DM), MC null
-older_versions/         Archived files (gitignored)
+  synthetic/            Section 7.1: GMM sweeps, planted spikes, ellipses, noise floor
+  sdxl/                 Section 7.2: SDXL guidance sweep, elderly DA, crane
+  alanine/              Section 7.3: alanine dipeptide KDE-DA, baselines, MC null
 ```
-
-## Shared Pipeline (cli/)
-
-| Script | Function |
-|--------|----------|
-| `cli/save_lags.py` | Simulate Langevin, compute C_sym(τ), save NPZ |
-| `cli/compute_ssa.py` | Compute SSA (Ŝ) + bootstrap CI from saved C(τ) |
-| `cli/compute_da.py` | Compute DA directions + MC significance from saved C(τ) |
-
-## Alanine Data
-
-Raw alanine dipeptide MD trajectories needed in `experiments/alanine/alanine_dipeptide/data/`.
-Gitignored due to size (~135 MB). Download from [MDshare](http://ftp.imp.fu-berlin.de/pub/cmb-data/).
 
 ---
 
-## Paper Figures — Exact Reproduction Commands
+## Running the Experiments
 
-All commands below are run from the repository root. Data status:
-- **tracked** = JSON/CSV result files committed to git; figures regenerate locally
-- **sync** = binary NPZ files; gitignored, sync from cluster or regenerate via SLURM
-- **on-the-fly** = computed at figure-generation time, no pre-saved data needed
+Each experiment follows the same pattern: a **producer** script runs the
+Langevin simulation and saves results, then a **figure** script reads those
+results and generates plots. Producer scripts are submitted as SLURM jobs;
+figure scripts run locally in seconds.
+
+### Synthetic GMMs (Section 7.1)
+
+**GMM parameter sweeps** (Fig 1) — SSA vs separation, variance, weight, mode count:
+```bash
+# Run (GPU, ~12h):
+sbatch experiments/synthetic/cluster/run_gmm_sweeps.sh
+# Output: experiments/synthetic/results/gmm_10d_n200_all_sweeps_T200.json
+```
+
+**Random GMM scatter** (Fig A2) — SSA rank vs MI rank over 50 random GMMs:
+```bash
+sbatch experiments/synthetic/cluster/run_random_sweep.sh
+# Output: experiments/synthetic/results/random_sweep_10d_n200.json
+```
+
+**dt-robustness** (Fig A3) — SSA stability across dt in {0.005, 0.01, 0.02}:
+```bash
+sbatch experiments/synthetic/cluster/run_dt_robustness.sh
+# Output: experiments/synthetic/results/gmm_10d_n200_dt_robustness.json
+```
+
+**On-the-fly experiments** (no pre-computation needed):
+```bash
+cd experiments/synthetic
+python fig_dispersion.py           # Fig 2a: dispersion vs fragmentation
+python fig_parallel_ellipses.py    # Fig 2b + A9: DA1 recovers slow axis
+python fig_a0_identity.py          # A0=sigma^2 I scale invariance
+python fig_noise_floor.py          # Fig A10-A13: free-conv validation
+```
+
+**Planted spikes** (Fig A15):
+```bash
+cd experiments/synthetic
+python simulate_planted_spikes.py  # produces results/fig_planted_spikes.npz
+```
+
+**Ellipses MC null** (Table 4):
+```bash
+sbatch experiments/synthetic/cluster/run_ellipses_null.sh
+# Output: experiments/synthetic/results/ellipses_null_results.npz
+```
+
+### SDXL Guidance Sweep (Section 7.2)
+
+**SSA across 7 prompts x 4 guidance scales** (Fig 3, Table 1):
+```bash
+# Step 1: Generate x0 latents + compute entropy (GPU, array 0-27, ~7h each):
+sbatch experiments/sdxl/cluster/run_guidance_gen.sh
+
+# Step 2: Run Langevin + compute SSA (GPU, array 0-27, ~19h each):
+sbatch experiments/sdxl/cluster/run_guidance_ssa.sh
+
+# Step 3: Trajectory-averaged SSA recompute (GPU, array 0-23):
+sbatch experiments/sdxl/cluster/run_traj_averaged.sh
+
+# Step 4: Bootstrap CIs (CPU, array 0-58):
+sbatch experiments/sdxl/cluster/run_bootstrap_ssa.sh
+```
+
+**Elderly DA extraction** (Fig 4, A7, A8):
+```bash
+# DA directions (GPU, ~24h):
+sbatch experiments/sdxl/cluster/run_da_elderly.sh
+
+# C(tau) for spectrum figure (GPU, ~20h):
+sbatch experiments/sdxl/cluster/run_sdxl_C_tau.sh
+
+# C(0) eigenvalues for free-conv overlay:
+sbatch experiments/sdxl/cluster/run_save_c0_eigvals_elderly.sh
+```
+
+**MC null test** (Table 4 SDXL row):
+```bash
+sbatch experiments/sdxl/cluster/run_sdxl_null.sh  # array 0-2, ~19h each
+```
+
+**Image decode** (crane extremes, guidance grids):
+```bash
+sbatch experiments/sdxl/cluster/run_decode_crane.sh
+sbatch experiments/sdxl/cluster/run_decode_grids.sh
+```
+
+**Weight comparability** (Appendix H):
+```bash
+sbatch experiments/sdxl/cluster/run_weights.sh
+```
+
+### Alanine Dipeptide (Section 7.3)
+
+Requires raw MD trajectories in `experiments/alanine/alanine_dipeptide/data/`
+(~135 MB, download from [MDshare](http://ftp.imp.fu-berlin.de/pub/cmb-data/)).
+
+**C(tau) + KDE-DA** (Fig 5, Table 2):
+```bash
+# C(tau) at 38 lags (GPU, ~4h):
+sbatch experiments/alanine/cluster/run_alanine_C_tau.sh
+
+# KDE-DA directions (GPU, ~12h):
+sbatch experiments/alanine/cluster/run_alanine_kde_da.sh
+```
+
+**MC null test** (Table 4 alanine row):
+```bash
+sbatch experiments/alanine/cluster/run_alanine_null.sh  # array 0-9, ~8 min each
+```
+
+**Baselines** (Table 3 — sparse K-means, spectral map, diffusion maps):
+```bash
+sbatch experiments/alanine/cluster/run_baselines.sh  # CPU-only, ~10 min each
+```
+
+**On-the-fly** (no pre-computation):
+```bash
+cd experiments/alanine
+python fig_tica_its.py  # Fig A14: TICA implied timescales
+```
+
+---
+
+## Reproducing Figures from Pre-computed Results
+
+All small result files (JSON/CSV, ~1.5 MB total) are tracked in git.
+Binary NPZ files are gitignored — sync from cluster or regenerate via SLURM.
+
+Once results are in place, figures regenerate locally in seconds (CPU-only):
 
 ### Main Text
 
----
-
-**Fig 1** (GMM sweeps — 4-panel: sep/var/weight/nmodes, 10D N=200)
-```
-Figure:   cd experiments/synthetic && python fig_gmm_sweeps.py
-```
-Producer: `sbatch experiments/synthetic/cluster/run_gmm_sweeps.sh`
-          (catfish, 1× GPU, 32G mem, 12h time limit)
-Data:     `experiments/synthetic/results/gmm_10d_n200_all_sweeps_T200.json` (tracked)
-
----
-
-**Fig 2a** (dispersion vs fragmentation — blob vs bimodal GMM)
-```
-Figure:   cd experiments/synthetic && python fig_dispersion.py
-```
-Producer: on-the-fly (simulates 2000 trajectories, computes DA + SSA + entropy)
-Data:     on-the-fly
-Runtime:  minutes (GPU optional)
-
----
-
-**Fig 2b** (parallel ellipses — DA1 recovers slow axis)
-```
-Figure:   cd experiments/synthetic && python fig_parallel_ellipses.py
-```
-Producer: on-the-fly (simulates 10k trajectories, convergence profile across 14 lags)
-Data:     on-the-fly
-Runtime:  minutes (GPU recommended)
-
----
-
-**Fig 3** (SDXL guidance sweep — SSA vs entropy, 7 prompts × 4 scales)
-```
-Figure:   cd experiments/sdxl && python fig_sdxl_guidance.py
-```
-Producer (SSA):     `sbatch experiments/sdxl/cluster/run_guidance_ssa.sh`
-                    (salmon, 1× L40S, 48G mem, 3-day time limit, array 0-27)
-Producer (entropy): `sbatch experiments/sdxl/cluster/run_guidance_gen.sh`
-                    (salmon, 1× L40S, 48G mem, 3-day time limit, array 0-27)
-Data:     `experiments/sdxl/results/traj_avg_*.json` (tracked, 56 files)
-          `experiments/sdxl/results/gen_*_entropy.json` (tracked, 56 files)
-
----
-
-**Fig 4** (elderly DA — DA1 vs PC1 image grid)
-```
-Figure:   cd experiments/sdxl && python fig_elderly_da.py --mode grid
-```
-Producer: `sbatch experiments/sdxl/cluster/run_da_elderly.sh`
-          (salmon, 1× L40S, 48G mem, 2-day time limit)
-Data:     `experiments/sdxl/results/clip_da_elderly_gs7p5_fc_dt0p0025.json` (tracked)
-          `experiments/sdxl/results/clip_da_elderly_gs7p5_fc_dt0p0025.npz` (sync, 3.1 MB)
-          `experiments/sdxl/results/gen_mp_p5_elderly_gs7p5_quick_x0.npz` (sync, latents)
-Runtime:  requires GPU (VAE decode + CLIP embed)
-
----
-
-**Fig 5** (alanine DA vs TICA — Ramachandran scatter)
-```
-Figure:   cd experiments/alanine && python fig_alanine_da_tica.py
-```
-Producer (C(τ)):  `sbatch experiments/alanine/cluster/run_alanine_C_tau.sh`
-                  (catfish, 1× L4, 16G mem, 4h time limit)
-Producer (DA):    `sbatch experiments/alanine/cluster/run_alanine_kde_da.sh`
-                  (salmon, 1× L40S, 32G mem, 12h time limit)
-Data:     `experiments/alanine/results/alanine_da_results_kde.npz` (sync, 6 KB)
-          `experiments/alanine/results/alanine_C_tau_full_h_half_10k.npz` (sync, 5.4 MB)
-          Requires raw alanine data in `alanine_dipeptide/data/` (~135 MB, see above)
-
----
+| Figure | Command |
+|--------|---------|
+| Fig 1 (GMM sweeps) | `cd experiments/synthetic && python fig_gmm_sweeps.py` |
+| Fig 2a (dispersion) | `cd experiments/synthetic && python fig_dispersion.py` |
+| Fig 2b (parallel ellipses) | `cd experiments/synthetic && python fig_parallel_ellipses.py` |
+| Fig 3 (SDXL guidance) | `cd experiments/sdxl && python fig_sdxl_guidance.py` |
+| Fig 4 (elderly DA grid) | `cd experiments/sdxl && python fig_elderly_da.py --mode grid` |
+| Fig 5 (alanine DA vs TICA) | `cd experiments/alanine && python fig_alanine_da_tica.py` |
 
 ### Appendix
 
----
-
-**Fig A1** (GMM snapshots)
-
-Same script as Fig 1 (snapshot panels generated within `fig_gmm_sweeps.py`).
-
----
-
-**Fig A2** (random GMM scatter — SSA rank vs MI rank)
-```
-Figure:   cd experiments/synthetic && python fig_random_sweep.py
-```
-Producer: `sbatch experiments/synthetic/cluster/run_random_sweep.sh`
-          (catfish, 1× GPU, 32G mem, 6h time limit)
-Data:     `experiments/synthetic/results/random_sweep_10d_n200.json` (tracked)
-
----
-
-**Fig A3** (dt-robustness — 3 dt values overlaid)
-```
-Figure:   cd experiments/synthetic && python fig_dt_robustness.py
-```
-Producer: `sbatch experiments/synthetic/cluster/run_dt_robustness.sh`
-          (catfish, 1× GPU, 32G mem, 24h time limit)
-Data:     `experiments/synthetic/results/gmm_10d_n200_dt_robustness.json` (tracked)
-          `experiments/synthetic/results/gmm_10d_n200_all_sweeps_T200.json` (tracked)
-          `experiments/synthetic/results/gmm_10d_dt_robust_dt0p02_T200.json` (tracked)
-
----
-
-**Fig A4–A5** (alanine bulk validation — eigenvalue histograms at 6 lags)
-```
-Figure:   cd experiments/alanine && python fig_alanine_bulk.py
-```
-Producer: same as Fig 5 (`run_alanine_C_tau.sh`)
-Data:     `experiments/alanine/results/alanine_C_tau_full_h_half_10k.npz` (sync)
-
----
-
-**Fig A6** (alanine spike count vs lag τ)
-```
-Figure:   cd experiments/alanine && python fig_alanine_spike_count.py
-```
-Producer: same as Fig 5 (`run_alanine_C_tau.sh`)
-Data:     `experiments/alanine/results/alanine_C_tau_full_h_half_10k.npz` (sync)
-
----
-
-**Fig A7** (elderly eigenvalue spectrum + MC null + free-conv density)
-```
-Figure:   cd experiments/sdxl && python fig_elderly_da.py --mode spectrum
-```
-Producer: `sbatch experiments/sdxl/cluster/run_sdxl_C_tau.sh`
-          (salmon, 1× L40S, 48G mem, 1-day time limit)
-Data:     `experiments/sdxl/results/clip_da_elderly_gs7p5_fc_dt0p0025.npz` (sync)
-          `experiments/sdxl/results/elderly_gs7p5_n200_C_tau_full.npz` (sync, 273 MB)
-          `experiments/sdxl/results/c0_eigvals_elderly_gs7p5_fc_dt0p0025.npz` (sync)
-Runtime:  CPU-only (no GPU needed)
-
----
-
-**Fig A8** (elderly DA1/DA2 projection histograms)
-```
-Figure:   cd experiments/sdxl && python fig_elderly_da.py --mode histogram
-```
-Producer: same as Fig 4 (`run_da_elderly.sh`)
-Data:     `experiments/sdxl/results/clip_da_elderly_gs7p5_fc_dt0p0025.npz` (sync)
-          `experiments/sdxl/results/gen_mp_p5_elderly_gs7p5_quick_clip.npz` (sync)
-Runtime:  CPU-only (no GPU needed)
-
----
-
-**Fig A9** (parallel ellipses — convergence panels)
-
-Same script as Fig 2b (appendix panels generated within `fig_parallel_ellipses.py`).
-
----
-
-**Fig A10–A13** (free-convolution noise floor validation — 6γ × 4τ grid)
-```
-Figure:   cd experiments/synthetic && python fig_noise_floor.py
-```
-Producer: on-the-fly (simulates OU processes, eigendecomposes C_sym(τ), overlays MP density)
-Data:     on-the-fly
-Runtime:  minutes (CPU-only)
-
----
-
-**Fig A14** (TICA implied timescales)
-```
-Figure:   cd experiments/alanine && python fig_tica_its.py
-```
-Producer: on-the-fly (computes TICA from raw alanine data)
-Data:     on-the-fly (requires raw alanine data in `alanine_dipeptide/data/`)
-Runtime:  fast (CPU-only)
-
----
-
-**Fig A15** (planted spikes — mode count vs lag)
-```
-Figure:   cd experiments/synthetic && python fig_planted_spikes.py --npz results/fig_planted_spikes.npz
-```
-Producer: `cd experiments/synthetic && python simulate_planted_spikes.py`
-Data:     `experiments/synthetic/results/fig_planted_spikes.npz` (sync)
-
----
-
-**A₀=σ²I figure** (scale-invariance demonstration)
-```
-Figure:   cd experiments/synthetic && python fig_a0_identity.py
-```
-Producer: on-the-fly (3 scaled GMMs)
-Data:     on-the-fly
-Runtime:  minutes (GPU optional)
-
----
+| Figure | Command |
+|--------|---------|
+| Fig A1 (GMM snapshots) | same as Fig 1 |
+| Fig A2 (random sweep) | `cd experiments/synthetic && python fig_random_sweep.py` |
+| Fig A3 (dt-robustness) | `cd experiments/synthetic && python fig_dt_robustness.py` |
+| Fig A4-A5 (alanine bulk) | `cd experiments/alanine && python fig_alanine_bulk.py` |
+| Fig A6 (spike count vs tau) | `cd experiments/alanine && python fig_alanine_spike_count.py` |
+| Fig A7 (elderly spectrum) | `cd experiments/sdxl && python fig_elderly_da.py --mode spectrum` |
+| Fig A8 (elderly histograms) | `cd experiments/sdxl && python fig_elderly_da.py --mode histogram` |
+| Fig A9 (ellipses convergence) | same as Fig 2b |
+| Fig A10-A13 (noise floor) | `cd experiments/synthetic && python fig_noise_floor.py` |
+| Fig A14 (TICA timescales) | `cd experiments/alanine && python fig_tica_its.py` |
+| Fig A15 (planted spikes) | `cd experiments/synthetic && python fig_planted_spikes.py --npz results/fig_planted_spikes.npz` |
+| A0=sigma^2 I figure | `cd experiments/synthetic && python fig_a0_identity.py` |
 
 ### Tables
 
----
-
-**Table 1** (SDXL SSA + entropy across 14 prompts × 4 guidance scales)
-
-Same script as Fig 3 (`fig_sdxl_guidance.py` prints table to stdout).
-Data:     `experiments/sdxl/results/traj_avg_*.json` (tracked)
-          `experiments/sdxl/results/bootstrap_traj_*.json` (tracked, 58 files)
-
----
-
-**Table 2** (alanine lag sensitivity — DA correlations across τ)
-```
-Table:    cd experiments/alanine && python table_alanine_lag_sensitivity.py
-```
-Producer: same as Fig 5 (`run_alanine_C_tau.sh`)
-Data:     `experiments/alanine/results/alanine_C_tau_full_h_half_10k.npz` (sync)
-          Requires raw alanine data in `alanine_dipeptide/data/`
-
----
-
-**Table 3** (alanine baselines — sparse K-means, spectral map, diffusion maps)
-```
-Table:    cd experiments/alanine && python table_alanine_baselines.py
-```
-Producer: `sbatch experiments/alanine/cluster/run_baselines.sh`
-          (CPU-only, ~10 min each baseline)
-Data:     `experiments/alanine/results/sparse_kmeans.json` (tracked)
-          `experiments/alanine/results/spectral_map.json` (tracked)
-          `experiments/alanine/results/diffusion_maps.json` (tracked)
-
----
-
-**Table 4** (Bonferroni — eigenvalue significance at τ*)
-```
-Table:    cd experiments/alanine && python table_alanine_bonferroni.py
-```
-Producer: `sbatch experiments/alanine/cluster/run_alanine_null.sh`
-          (catfish, 1× L4, 32G mem, 1h time limit, array 0-9; ~8 min/task)
-Data:     `experiments/alanine/results/alanine_C_tau_full_h_half_10k.npz` (sync)
-          `experiments/alanine/results/alanine_null_lag2k_task*.npz` (sync, 10 files)
-
----
-
-**Table App H** (weight comparability across guidance scales)
-```
-Table:    cd experiments/sdxl && python table_weights.py
-```
-Producer: `sbatch experiments/sdxl/cluster/run_weights.sh`
-          (catfish, 1× L4, 32G mem, 2h time limit)
-Data:     `experiments/sdxl/results/weight_table.json` (tracked)
-
----
-
-**Bootstrap SSA CIs** (14 prompts × 4 scales, B=2000)
-
-Producer: `sbatch experiments/sdxl/cluster/run_bootstrap_ssa.sh`
-Data:     `experiments/sdxl/results/bootstrap_traj_*.json` (tracked, 58 files)
-Runtime:  ~3h total (CPU-only, pure NumPy resampling)
-
----
-
-## Additional Producers (not tied to a single figure)
-
-**SDXL trajectory-averaged pipeline** (3 modes):
-```bash
-# Mode 1: Recompute SSA (GPU required)
-cd experiments/sdxl && python traj_averaged_pipeline.py \
-    --checkpoint results/langevin_ckpt_*.npz --dt 0.005 --name my_cell --output_dir results
-
-# Mode 2: Bootstrap CI (CPU-only)
-cd experiments/sdxl && python traj_averaged_pipeline.py --mode bootstrap \
-    --clip_traj results/z_clip_traj_*.npz --name my_cell --B 2000
-
-# Mode 3: DA significance (CPU-only)
-cd experiments/sdxl && python traj_averaged_pipeline.py --mode da_significance \
-    --clip_traj results/z_clip_traj_*.npz --dt 0.0025 --T 2000 --name elderly_gs7p5
-```
-SLURM: `sbatch experiments/sdxl/cluster/run_traj_averaged.sh`
-       (salmon, 1× L40S, 48G mem, 12h time limit, array 0-23)
-
-**SDXL MC null** (anisotropic Gaussian null for DA significance):
-```
-cd experiments/sdxl && python run_sdxl_mc_null.py --task_id 0
-```
-SLURM: `sbatch experiments/sdxl/cluster/run_sdxl_null.sh`
-       (salmon, 1× L40S, 48G mem, 2-day time limit, array 0-2; ~19h/replicate)
-
-**SDXL C(0) eigenvalues** (for spectrum figure):
-```
-cd experiments/sdxl && python save_c0_eigvals_elderly.py
-```
-SLURM: `sbatch experiments/sdxl/cluster/run_save_c0_eigvals_elderly.sh`
-       (salmon, 1× L40S, 48G mem)
-
-**Crane PC1/DA1 extremes** (image grids):
-```
-cd experiments/sdxl && python fig_crane_extremes.py
-```
-SLURM: `sbatch experiments/sdxl/cluster/run_decode_crane.sh`
-       (salmon, 1× L40S, 32G mem, 30 min time limit)
-Requires GPU (VAE decode).
+| Table | Command |
+|-------|---------|
+| Table 1 (SDXL SSA + entropy) | `cd experiments/sdxl && python fig_sdxl_guidance.py` (prints to stdout) |
+| Table 2 (alanine lag sensitivity) | `cd experiments/alanine && python table_alanine_lag_sensitivity.py` |
+| Table 3 (alanine baselines) | `cd experiments/alanine && python table_alanine_baselines.py` |
+| Table 4 (Bonferroni significance) | `cd experiments/alanine && python table_alanine_bonferroni.py` |
+| App H (weight comparability) | `cd experiments/sdxl && python table_weights.py` |
 
 ---
 
 ## Syncing Results from Cluster
 
-For binary NPZ files marked "sync" above:
+For binary NPZ files:
 
 ```bash
 # Set up SSH tunnel (replace with your cluster details)
@@ -386,50 +276,31 @@ rsync -avz -e 'ssh -p 2222' \
   experiments/alanine/results/
 ```
 
-All small JSON/CSV result files (~1.5 MB total) are tracked in git.
-Binary NPZ files are gitignored; sync from cluster or regenerate via SLURM.
-
 ---
 
-## Compute Requirements for Reproduction
+## Compute Requirements
 
-All experiments run on single-GPU SLURM jobs on an institutional cluster.
-No multi-GPU or distributed training is required.
+All experiments run on single-GPU SLURM jobs. No multi-GPU or distributed
+training is required.
 
-### Hardware
-
-| Partition | GPU | Memory | Used for |
-|-----------|-----|--------|----------|
-| salmon | NVIDIA L40S 48GB | 32–48 GB | SDXL Langevin, DA extraction, image decode |
-| catfish | NVIDIA L4 | 16–32 GB | Synthetic GMM sweeps, alanine KDE-DA, baselines |
-| (any) | CPU only | 16 GB | On-the-fly figures, bootstrap resampling, baselines |
-
-### Per-experiment compute
-
-| Experiment | Hardware | Array jobs | Est. GPU-hrs |
+| Experiment | GPU | Array jobs | Est. GPU-hrs |
 |---|---|---|---|
 | SDXL guidance sweep SSA (Fig 3) | L40S | 28 | 532 |
-| SDXL guidance generation + entropy (Fig 3) | L40S | 28 | 196 |
+| SDXL generation + entropy (Fig 3) | L40S | 28 | 196 |
 | SDXL traj-averaged recompute (Table 1) | L40S | 24 | 192 |
-| SDXL MC null (Table 4 SDXL) | L40S | 3 | 57 |
+| SDXL MC null (Table 4) | L40S | 3 | 57 |
 | SDXL bootstrap CIs (Table 1) | L40S | 59 | 30 |
 | SDXL elderly DA (Fig 4) | L40S | 1 | 24 |
-| SDXL C(τ) (Fig A7) | L40S | 1 | 20 |
+| SDXL C(tau) (Fig A7) | L40S | 1 | 20 |
 | SDXL decode grids + crane | L40S | 29 | 15 |
 | GMM sweeps + random + dt-robust (Fig 1, A2, A3) | L4 | 3 | 24 |
 | Alanine KDE-DA (Fig 5) | L40S | 1 | 6 |
-| Alanine C(τ) + null + baselines | L4 | 12 | 5 |
-| On-the-fly figures (Fig 2a–b, A0, A9–A14) | CPU | — | <1 |
+| Alanine C(tau) + null + baselines | L4 | 12 | 5 |
+| On-the-fly figures (Fig 2, A0, A9-A14) | CPU | -- | <1 |
 | **Total** | | | **~1,100** |
 
-SDXL Langevin is the dominant cost (~950 of ~1,100 GPU-hours). Each
-guidance-scale cell runs N=200 trajectories × T=2000 UNet forward passes at
-1024×1024 resolution, taking ~19 hours on L40S.
+SDXL Langevin dominates (~950 GPU-hours): each cell runs N=200 trajectories x
+T=2000 UNet forward passes at 1024x1024, taking ~19h on L40S.
 
-### Minimal reproduction
-
-To regenerate **figures only** from pre-computed results (tracked JSON/CSV +
-synced NPZ): CPU-only, completes in minutes. No GPU needed.
-
-To regenerate **all results from scratch**: ~1,100 GPU-hours on L40S-class
-hardware, dominated by the 28-cell SDXL guidance sweep.
+**Minimal reproduction:** To regenerate figures from pre-computed results
+(tracked JSON/CSV + synced NPZ): CPU-only, completes in minutes.
