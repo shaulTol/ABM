@@ -20,7 +20,7 @@ at a grid of lags.
 
 **Stage 2a — SSA** (`cli/compute_ssa.py`).
 At each lag compute the trace-normalized autocorrelation
-$$\hat\rho(\tau_\ell) = \frac{\mathrm{tr}\;\hat{C}(\tau_\ell)}{\mathrm{tr}\;\hat{C}(0)}$$.
+$$\hat\rho(\tau_\ell) = \frac{\mathrm{tr}\,\hat{C}(\tau_\ell)}{\mathrm{tr}\,\hat{C}(0)}$$.
 Truncate at the stopping lag $T_{\max}$ where $\hat{\rho}(\tau)^2$ hits the $1/N$ noise floor. Sum:
 
 $$\hat{S} = \Delta t \sum_{\ell=0}^{L_{\max}} \hat\rho(\ell\,\Delta t)^2$$
