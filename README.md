@@ -19,10 +19,11 @@ Compute the symmetrized autocovariance $C_{\mathrm{sym}}(\tau) = (C(\tau) + C(\t
 at a grid of lags.
 
 **Stage 2a — SSA** (`cli/compute_ssa.py`).
-Eigendecompose $C_{\mathrm{sym}}(\tau)$ at each lag. Normalize: $\rho_j(\tau) = \lambda_j(\tau)/\sigma_f^2$.
-Truncate at the free-convolution noise floor $\lambda_+(\tau)$. Sum:
+At each lag compute the trace-normalized autocorrelation
+$\hat\rho(\tau_\ell) = \mathrm{tr}\,\hat C(\tau_\ell)\,/\,\mathrm{tr}\,\hat C(0)$.
+Truncate at the stopping lag $T_{\max}$ where $\hat\rho(\tau)^2$ hits the $1/N$ noise floor. Sum:
 
-$$\hat{S} = \Delta t \sum_{\tau \le \tau^*} \sum_j \rho_j(\tau)^2$$
+$$\hat{S} = \Delta t \sum_{\ell=0}^{L_{\max}} \hat\rho(\ell\,\Delta t)^2$$
 
 This is a scalar in $[0, \infty)$ that is zero for unimodal distributions and grows with mode separation.
 
