@@ -1,7 +1,7 @@
 """Spectral Map baseline for alanine.
 
 Reference implementation: PLUMED-NEST plumID:24.005, file `spectral-map.py`,
-Zenodo record 10678142 (deposited 2024-02-19 by Jakub Rydzewski).
+Zenodo record 10678142 (plumID:24.005).
 This script imports and uses that reference implementation directly; it is
 saved alongside this file as `spectral_map_reference.py`.
 
@@ -70,7 +70,7 @@ def main():
     print(f'device: {device}')
 
     print('=' * 70)
-    print('Spectral Map baseline (Rydzewski et al.)')
+    print('Spectral Map baseline (spectral map (plumID:24.005))')
     print(f'reference: {REF_VERSION}')
     print('=' * 70)
 
@@ -182,7 +182,7 @@ def main():
     )
     payload = {
         'method': 'spectral_map',
-        'reference': 'Rydzewski et al., spectral map',
+        'reference': 'spectral map (plumID:24.005), spectral map',
         'implementation_version': REF_VERSION,
         'embedding_dim': 2,
         'architecture': [p, 200, 100, 50, 2],

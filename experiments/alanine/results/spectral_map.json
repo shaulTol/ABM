@@ -1,6 +1,6 @@
 {
   "method": "spectral_map",
-  "reference": "Rydzewski et al., spectral map",
+  "reference": "spectral map (plumID:24.005)",
   "implementation_version": "PLUMED-NEST plumID:24.005 (Zenodo 10678142, deposited 2024-02-19)",
   "embedding_dim": 2,
   "architecture": [

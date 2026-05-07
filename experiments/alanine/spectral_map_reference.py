@@ -1,6 +1,6 @@
 """A reference implementation of spectral map."""
 
-# Author: Jakub Rydzewski <jr@fizyka.umk.pl>
+# Reference implementation from plumID:24.005
 
 import numpy as np
 import torch
