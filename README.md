@@ -7,35 +7,40 @@ metastability.
 
 ## Algorithm Overview
 
-Given samples X from an unknown density f, the method works in three stages:
+Given samples $X$ from an unknown density $f$, the method works in three stages:
 
 **Stage 1 — Canonical diffusion** (Algorithm 1, `cli/save_lags.py`).
-Run the isotropic Langevin SDE dX = (sigma_f^2 / 2) nabla log f(X) dt + sigma_f dW,
-where sigma_f^2 = tr Cov(X) / d. Collect N trajectories, each of length T.
-Compute the symmetrized autocovariance C_sym(tau) = (C(tau) + C(tau)^T) / 2
+Run the isotropic Langevin SDE
+
+$$dX = \tfrac{\sigma_f^2}{2} \nabla \log f(X)\, dt + \sigma_f\, dW$$
+
+where $\sigma_f^2 = \mathrm{tr}\,\mathrm{Cov}(X)/d$. Collect $N$ trajectories, each of length $T$.
+Compute the symmetrized autocovariance $C_{\mathrm{sym}}(\tau) = (C(\tau) + C(\tau)^\top)/2$
 at a grid of lags.
 
 **Stage 2a — SSA** (`cli/compute_ssa.py`).
-Eigendecompose C_sym(tau) at each lag. Normalize: rho_j(tau) = lambda_j(tau) / sigma_f^2.
-Truncate at the free-convolution noise floor lambda_+(tau). Sum:
-S-hat = dt * sum_{tau <= tau*} sum_j rho_j(tau)^2. This is a scalar in [0, infty)
-that is zero for unimodal distributions and grows with mode separation.
+Eigendecompose $C_{\mathrm{sym}}(\tau)$ at each lag. Normalize: $\rho_j(\tau) = \lambda_j(\tau)/\sigma_f^2$.
+Truncate at the free-convolution noise floor $\lambda_+(\tau)$. Sum:
+
+$$\hat{S} = \Delta t \sum_{\tau \le \tau^*} \sum_j \rho_j(\tau)^2$$
+
+This is a scalar in $[0, \infty)$ that is zero for unimodal distributions and grows with mode separation.
 
 **Stage 2b — DA directions** (`cli/compute_da.py`).
-Pick tau* where the second eigenvalue crosses the noise floor. The eigenvectors
-of C_sym(tau*) are the DA directions, ordered by metastability. DA1 points
-along the slowest-mixing axis of f.
+Pick $\tau^*$ where the second eigenvalue crosses the noise floor. The eigenvectors
+of $C_{\mathrm{sym}}(\tau^*)$ are the DA directions, ordered by metastability. DA1 points
+along the slowest-mixing axis of $f$.
 
 ### Code ↔ Paper Mapping
 
 | Paper | Code | Description |
 |-------|------|-------------|
-| Algorithm 1 | `cli/save_lags.py` | Langevin simulation + C_sym(tau) computation |
+| Algorithm 1 | `cli/save_lags.py` | Langevin simulation + $C_{\mathrm{sym}}(\tau)$ computation |
 | Eq. 3 (SSA) | `cli/compute_ssa.py` | Riemann-sum estimator with noise floor |
-| Def. 3 (DA) | `cli/compute_da.py` | Eigenvectors of C_sym(tau*) |
-| Theorem 2 (noise floor) | `src/noise_floor/free_conv_utils.py` | Free-convolution upper edge lambda_+(tau) |
+| Def. 3 (DA) | `cli/compute_da.py` | Eigenvectors of $C_{\mathrm{sym}}(\tau^*)$ |
+| Theorem 2 (noise floor) | `src/noise_floor/free_conv_utils.py` | Free-convolution upper edge $\lambda_+(\tau)$ |
 | Langevin integrator | `src/simulation/langevin.py` | Euler-Maruyama SDE solver |
-| KDE score estimator | `src/kde/kde_score.py` | nabla log f-hat for tabular data |
+| KDE score estimator | `src/kde/kde_score.py` | $\nabla \log \hat{f}$ for tabular data |
 | DDPM score (SDXL) | `experiments/sdxl/sdxl_components.py` | Tweedie denoiser as score oracle |
 
 ## Setup
@@ -90,7 +95,7 @@ figure scripts run locally in seconds.
 
 ### Synthetic GMMs (Section 7.1)
 
-**GMM parameter sweeps** (Fig 1) — SSA vs separation, variance, weight, mode count:
+**GMM parameter sweeps** (Fig 1a-d) — SSA vs separation, variance, weight, mode count:
 ```bash
 # Run (GPU, ~12h):
 sbatch experiments/synthetic/cluster/run_gmm_sweeps.sh
@@ -112,8 +117,8 @@ sbatch experiments/synthetic/cluster/run_dt_robustness.sh
 **On-the-fly experiments** (no pre-computation needed):
 ```bash
 cd experiments/synthetic
-python fig_dispersion.py           # Fig 2a: dispersion vs fragmentation
-python fig_parallel_ellipses.py    # Fig 2b + A9: DA1 recovers slow axis
+python fig_dispersion.py           # Fig 1e: dispersion vs fragmentation
+python fig_parallel_ellipses.py    # Fig 1f + A9: DA1 recovers slow axis
 python fig_a0_identity.py          # A0=sigma^2 I scale invariance
 python fig_noise_floor.py          # Fig A10-A13: free-conv validation
 ```
@@ -218,9 +223,9 @@ Once results are in place, figures regenerate locally in seconds (CPU-only):
 
 | Figure | Command |
 |--------|---------|
-| Fig 1 (GMM sweeps) | `cd experiments/synthetic && python fig_gmm_sweeps.py` |
-| Fig 2a (dispersion) | `cd experiments/synthetic && python fig_dispersion.py` |
-| Fig 2b (parallel ellipses) | `cd experiments/synthetic && python fig_parallel_ellipses.py` |
+| Fig 1a-d (GMM sweeps) | `cd experiments/synthetic && python fig_gmm_sweeps.py` |
+| Fig 1e (dispersion) | `cd experiments/synthetic && python fig_dispersion.py` |
+| Fig 1f (parallel ellipses) | `cd experiments/synthetic && python fig_parallel_ellipses.py` |
 | Fig 3 (SDXL guidance) | `cd experiments/sdxl && python fig_sdxl_guidance.py` |
 | Fig 4 (elderly DA grid) | `cd experiments/sdxl && python fig_elderly_da.py --mode grid` |
 | Fig 5 (alanine DA vs TICA) | `cd experiments/alanine && python fig_alanine_da_tica.py` |
@@ -240,7 +245,7 @@ Once results are in place, figures regenerate locally in seconds (CPU-only):
 | Fig A10-A13 (noise floor) | `cd experiments/synthetic && python fig_noise_floor.py` |
 | Fig A14 (TICA timescales) | `cd experiments/alanine && python fig_tica_its.py` |
 | Fig A15 (planted spikes) | `cd experiments/synthetic && python fig_planted_spikes.py --npz results/fig_planted_spikes.npz` |
-| A0=sigma^2 I figure | `cd experiments/synthetic && python fig_a0_identity.py` |
+| $A_0 = \sigma^2 I$ figure | `cd experiments/synthetic && python fig_a0_identity.py` |
 
 ### Tables
 
@@ -296,7 +301,7 @@ training is required.
 | GMM sweeps + random + dt-robust (Fig 1, A2, A3) | L4 | 3 | 24 |
 | Alanine KDE-DA (Fig 5) | L40S | 1 | 6 |
 | Alanine C(tau) + null + baselines | L4 | 12 | 5 |
-| On-the-fly figures (Fig 2, A0, A9-A14) | CPU | -- | <1 |
+| On-the-fly figures (Fig 1e-f, A0, A9-A14) | CPU | -- | <1 |
 | **Total** | | | **~1,100** |
 
 SDXL Langevin dominates (~950 GPU-hours): each cell runs N=200 trajectories x
