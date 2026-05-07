@@ -13,6 +13,24 @@ pip install -r requirements.txt
 # Additional: pip install latent_clip open_clip_torch==3.3.0 diffusers==0.30.0
 ```
 
+### Cluster Configuration
+
+SLURM scripts and rsync commands use placeholders. Before running, set these
+environment variables or replace them in the scripts:
+
+| Placeholder | Meaning | Example |
+|-------------|---------|---------|
+| `<CLUSTER_USER>` | Your cluster username | `jdoe` |
+| `<CLUSTER_HOST>` | SSH jump host for tunnel | `gateway.university.edu` |
+| `<PROJECT_DIR>` | Absolute path to this repo on cluster | `/scratch/jdoe/ssa-paper` |
+| `<CONDA_ENV>` | Absolute path to conda environment | `/scratch/jdoe/envs/ssa_env` |
+| `<CONDA_SH>` | Path to `conda.sh` activation script | `/opt/miniconda3/etc/profile.d/conda.sh` |
+| `<CONDA_BIN>` | Path to conda `bin/` directory | `/opt/miniconda3/bin` |
+| `<NV_SITE_PACKAGES>` | nvidia packages in conda env's site-packages | `<CONDA_ENV>/lib/python3.12/site-packages/nvidia` |
+| `<USER_SITE_PACKAGES>` | User-installed nvidia packages (nccl, nvjitlink) | `~/.local/lib/python3.12/site-packages/nvidia` |
+| `<TORCH_LIB>` | PyTorch shared libraries | `<CONDA_ENV>/lib/python3.12/site-packages/torch/lib` |
+| `<HF_CACHE>` | Hugging Face model cache directory | `~/.cache/huggingface` |
+
 ## Repository Structure
 
 ```
@@ -296,13 +314,10 @@ Data:     `experiments/sdxl/results/weight_table.json` (tracked)
 ---
 
 **Bootstrap SSA CIs** (14 prompts × 4 scales, B=2000)
-```
-Table:    cd experiments/sdxl && python bootstrap_shat_all14.py
-```
-Producer: reads per-cell SSA JSONs (already produced by guidance sweep)
-Data:     `experiments/sdxl/results/clip_da_*_dt0p005.json` (tracked)
-Output:   `experiments/sdxl/results/results_shat14_bootstrap.csv` (tracked)
-Runtime:  fast (CPU-only, pure NumPy resampling)
+
+Producer: `sbatch experiments/sdxl/cluster/run_bootstrap_ssa.sh`
+Data:     `experiments/sdxl/results/bootstrap_traj_*.json` (tracked, 58 files)
+Runtime:  ~3h total (CPU-only, pure NumPy resampling)
 
 ---
 
@@ -354,20 +369,20 @@ Requires GPU (VAE decode).
 For binary NPZ files marked "sync" above:
 
 ```bash
-# Set up SSH tunnel
-ssh -N -L 2222:moriah-gw:22 shaulytolk@bava.cs.huji.ac.il
+# Set up SSH tunnel (replace with your cluster details)
+ssh -N -L 2222:<CLUSTER_HOST>:22
 
-# Sync all result files
+# Sync all result files (replace <CLUSTER_USER> and <PROJECT_DIR>)
 rsync -avz -e 'ssh -p 2222' \
-  shaulytolk@localhost:/sci/labs/orzuk/shaulytolk/ABM/experiments/synthetic/results/ \
+  <CLUSTER_USER>@localhost:<PROJECT_DIR>/experiments/synthetic/results/ \
   experiments/synthetic/results/
 
 rsync -avz -e 'ssh -p 2222' \
-  shaulytolk@localhost:/sci/labs/orzuk/shaulytolk/ABM/experiments/sdxl/results/ \
+  <CLUSTER_USER>@localhost:<PROJECT_DIR>/experiments/sdxl/results/ \
   experiments/sdxl/results/
 
 rsync -avz -e 'ssh -p 2222' \
-  shaulytolk@localhost:/sci/labs/orzuk/shaulytolk/ABM/experiments/alanine/results/ \
+  <CLUSTER_USER>@localhost:<PROJECT_DIR>/experiments/alanine/results/ \
   experiments/alanine/results/
 ```
 
@@ -378,7 +393,7 @@ Binary NPZ files are gitignored; sync from cluster or regenerate via SLURM.
 
 ## Compute Requirements for Reproduction
 
-All experiments run on single-GPU SLURM jobs on the HUJI Moriah cluster.
+All experiments run on single-GPU SLURM jobs on an institutional cluster.
 No multi-GPU or distributed training is required.
 
 ### Hardware

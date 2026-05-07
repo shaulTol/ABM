@@ -1,0 +1,40 @@
+{
+  "point_estimate_abs_rho": 0.8998469961749045,
+  "point_estimate_signed_rho": 0.8998469961749045,
+  "saved_paper_signed_rho": 0.9114867447079421,
+  "point_da1_cos_with_saved": 0.964976794366943,
+  "point_eigenvalue_gap_lambda1_over_lambda2": 1.9001950935392784,
+  "B": 2000,
+  "bootstrap_mean_abs_rho": 0.8809767959198981,
+  "bootstrap_se_abs_rho": 0.04564541902752566,
+  "bootstrap_ci95_abs_rho": [
+    0.776758118952974,
+    0.940847896197405
+  ],
+  "fraction_abs_rho_gt_0p8": 0.936,
+  "bootstrap_median_lambda1_over_lambda2": 1.8048271893023784,
+  "bootstrap_min_lambda1_over_lambda2": 1.1979026537001203,
+  "bootstrap_max_lambda1_over_lambda2": 2.8332300720408172,
+  "bootstrap_sign_flip_count": 1004,
+  "bootstrap_sign_flip_rate": 0.502,
+  "nans": 0,
+  "mu_variant_used": "local_(z0+z_tau)/2",
+  "rng_seed": 20260503,
+  "inputs": {
+    "z_tau_npz": "results/clip_da_elderly_gs7p5_fc_z_tau.npz",
+    "point_estimate_npz": "results/clip_da_elderly_gs7p5_fc_dt0p0025.npz",
+    "point_estimate_json": "results/clip_da_elderly_gs7p5_fc_dt0p0025.json"
+  },
+  "configuration": {
+    "T": 2000,
+    "dt": 0.0025,
+    "n_traj": 200,
+    "tau_star_lag": 2000,
+    "embed_dim": 768,
+    "model": "stabilityai/stable-diffusion-xl-base-1.0",
+    "prompt": "a portrait of an elderly person",
+    "guidance_scale": 7.5,
+    "clip_model": "openai/clip-vit-large-patch14",
+    "gender_axis": "normalize(CLIP('a photograph of a woman') - CLIP('a photograph of a man'))"
+  }
+}
