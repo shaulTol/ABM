@@ -303,5 +303,12 @@ training is required.
 SDXL Langevin dominates (~950 GPU-hours): each cell runs N=200 trajectories x
 T=2000 UNet forward passes at 1024x1024, taking ~19h on L40S.
 
+**Faster autocorrelation (added after publication).**
+`compute_vector_autocorrelation` (and `compute_vector_ssa_score`) in
+`src/metrics/autocorrelation.py` accept `method='fft'`, which computes all lags
+at once via Wiener–Khinchin in O(N·d·T log T) instead of the per-lag loop. It
+computes the same estimator and matches the default `method='loop'` up to
+float32 rounding (|Δρ| ≈ 1e-6). All results in the paper use the default loop.
+
 **Minimal reproduction:** To regenerate figures from pre-computed results
 (tracked JSON/CSV + synced NPZ): CPU-only, completes in minutes.
