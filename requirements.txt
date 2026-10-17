@@ -10,3 +10,4 @@ diffusers==0.30.0
 accelerate
 torchvision
 transformers<=4.40.0
+diptest

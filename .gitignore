@@ -47,20 +47,27 @@ docs/
 # Track small JSON/CSV result files
 !experiments/*/results/*.json
 !experiments/*/results/*.csv
+!experiments/sdxl/results/bootstrap_pooled/*.json
+!experiments/robustness/*/results/*.json
+!experiments/robustness/*/results/*.csv
+!experiments/robustness/*/results/*/*.json
+!experiments/robustness/*/results/*/*/*.json
+!experiments/robustness/sdxl_lag/*.json
 
 # Local paper source snapshot (not tracked)
 MultimodalityMeasure-25.tex
 CAMERA_READY_TODO.md
 CAMERA_READY_CHANGELOG.md
+REBUTTAL_EXPERIMENTS_USED.md
 
-# Rebuttal experiments: kept local until the camera-ready paper is final.
-# Then decide which ones the paper cites and un-ignore those (see CAMERA_READY_TODO.md).
+# Rebuttal leftovers not used by the paper (the ones it uses are in experiments/robustness/).
 experiments/noise_floor/
 experiments/pne/
 experiments/rebuttal_figures/
 experiments/sdxl/p4_evidence/
 experiments/sdxl/p4_extract_sdxl_evidence.py
 experiments/sdxl/rebuttal_lag_sensitivity/
+experiments/sdxl/bootstrap_1overN/
 experiments/sdxl/results/gen_person_gs*_entropy.json
 experiments/synthetic/audit_p2_dispersion_baseline.py
 experiments/synthetic/cluster/run_p2_*.sh

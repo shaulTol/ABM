@@ -200,36 +200,20 @@ def compute_trajectory_averaged_ssa(z0_clip, z_clip_snapshots, snapshot_lags, dt
     rho_sq_arr = np.array(rho_sq_combined)
     phys_lags = np.array(all_lags, dtype=float) * dt
 
-    # --- Free-conv floor truncation ---
-    sigma_f_sq = C0_traj / D
-    sigma_f = np.sqrt(sigma_f_sq)
+    sigma_f = np.sqrt(C0_traj / D)  # CLIP-space scalar scale (reported only)
 
-    tau_star = None
-    floor_sq = []
-    for lag in all_lags:
-        tau_phys = lag * dt
-        try:
-            _, lp = fc_edges(tau_phys, sigma=sigma_f, gamma=gamma)
-            rho_floor = (lp / C0_traj) ** 2 if C0_traj > 0 else 0
-            floor_sq.append(rho_floor)
-        except Exception:
-            floor_sq.append(0)
-    floor_sq = np.array(floor_sq)
+    # --- 1/N stopping rule (paper eq:tmax_stopping) ---
+    # Truncate at the first lag where rho^2 <= 1/N (that lag included); use the
+    # full horizon if it never crosses. Before 2026-10 this used the
+    # free-convolution (DA) floor instead.
+    below = np.where(rho_sq_arr <= 1.0 / N)[0]
+    tau_star_idx = below[0] if len(below) else len(all_lags) - 1
+    tau_star = all_lags[tau_star_idx]
+    converged = bool(len(below))
 
-    mask_above = rho_sq_arr > floor_sq
-    if not mask_above.all():
-        first_below = np.where(~mask_above)[0][0]
-        tau_star_idx = max(0, first_below - 1)
-        tau_star = all_lags[tau_star_idx]
-    else:
-        tau_star = all_lags[-1]
-
-    # SSA: integrate ρ² up to tau_star
-    if tau_star is not None:
-        mask_ssa = np.array(all_lags) <= tau_star
-        ssa_traj = float(aggregate_ssa(rho_sq_arr[mask_ssa], lags=phys_lags[mask_ssa]))
-    else:
-        ssa_traj = float(aggregate_ssa(rho_sq_arr, lags=phys_lags))
+    # SSA: integrate rho^2 up to tau_star
+    mask_ssa = np.array(all_lags) <= tau_star
+    ssa_traj = float(aggregate_ssa(rho_sq_arr[mask_ssa], lags=phys_lags[mask_ssa]))
 
     ssa_traj_all = float(aggregate_ssa(rho_sq_arr, lags=phys_lags))
 
@@ -247,16 +231,15 @@ def compute_trajectory_averaged_ssa(z0_clip, z_clip_snapshots, snapshot_lags, dt
     rho_sq_simple_arr = np.array(rho_sq_simple_all)
     phys_lags_simple = np.array(simple_lags, dtype=float) * dt
 
-    if tau_star is not None:
-        mask_simple = np.array(simple_lags) <= tau_star
-        ssa_simple = float(aggregate_ssa(rho_sq_simple_arr[mask_simple],
-                                         lags=phys_lags_simple[mask_simple]))
-    else:
-        ssa_simple = float(aggregate_ssa(rho_sq_simple_arr, lags=phys_lags_simple))
+    mask_simple = np.array(simple_lags) <= tau_star
+    ssa_simple = float(aggregate_ssa(rho_sq_simple_arr[mask_simple],
+                                     lags=phys_lags_simple[mask_simple]))
 
     return {
         "ssa_traj_averaged": ssa_traj,
         "ssa_traj_averaged_all": ssa_traj_all,
+        "stopping_rule": "1/N first crossing",
+        "converged_1overN": converged,
         "ssa_simple_pair": ssa_simple,
         "tau_star_steps": int(tau_star) if tau_star else None,
         "tau_star_phys": float(tau_star * dt) if tau_star else None,
@@ -281,134 +264,81 @@ def compute_trajectory_averaged_ssa(z0_clip, z_clip_snapshots, snapshot_lags, dt
 # Stage 2: Bootstrap confidence intervals
 # ============================================================
 
-def compute_traj_ssa_one_sample(z_traj, fixed20_lags, fixed20_with_zero,
-                                 log_lags, log_data, dt, T, D, gamma):
-    """Compute traj-averaged SSA for one (possibly resampled) set of trajectories.
+def _pooled_rho_sq(G, MM, grid, log_idx, log_lags, N):
+    """rho^2 curve of the pooled estimator from Gram quantities.
 
-    z_traj: (N, n_times, D) array
-    Returns: ssa_traj (float)
+    G[i, j]  = sum_n z_ni . z_nj      over all saved times (resample-weighted)
+    MM[i, j] = mu_i . mu_j            with mu_i the (weighted) mean at time i
+    grid     = indices of the fixed-20 grid (incl. t=0), uniform 20-step spacing
+
+    Fixed-20 lags: global mean over the grid, ratio of pooled sums (eq:c_hat_def),
+    then squared. Log lags: simple pair (0, t), centred by the time-0 mean.
     """
-    N = z_traj.shape[0]
-    n_times = z_traj.shape[1]
+    ng = len(grid)
+    Gg, Mg = G[np.ix_(grid, grid)], MM[np.ix_(grid, grid)]
+    a = Mg.mean(axis=1)                       # mu_i . mbar
+    mm = Mg.mean()                            # |mbar|^2
+    cross = Gg - N * a[:, None] - N * a[None, :] + N * mm
+    C0 = np.trace(cross) / (N * ng)
+    rho_sq = {20 * k: float((np.trace(cross, offset=k) / (N * (ng - k)) / C0) ** 2)
+              for k in range(1, ng)}
+    var0 = G[0, 0] - N * MM[0, 0]
+    for t, j in zip(log_lags, log_idx):
+        rho_sq[t] = float(((G[0, j] - N * MM[0, j]) / var0) ** 2)
+    return rho_sq
 
-    # Trajectory-averaged ρ²(τ) with per-starting-time centering
-    rho_sq_traj = {}
-    for target_lag in fixed20_lags:
-        target_idx_offset = target_lag // 20
-        rho_list = []
-        for i in range(n_times):
-            j = i + target_idx_offset
-            if j < n_times:
-                if fixed20_with_zero[j] - fixed20_with_zero[i] == target_lag:
-                    mu_s = z_traj[:, i, :].mean(axis=0)
-                    z_s_c = z_traj[:, i, :] - mu_s
-                    z_t_c = z_traj[:, j, :] - mu_s
-                    cross = float((z_s_c * z_t_c).sum()) / N
-                    var_s = float((z_s_c ** 2).sum()) / N
-                    if var_s > 1e-12:
-                        rho_list.append(cross / var_s)
-        if rho_list:
-            rho_sq_traj[target_lag] = float(np.mean(np.array(rho_list) ** 2))
 
-    # Simple-pair ρ²(τ) for log-binary lags
-    mu0 = z_traj[:, 0, :].mean(axis=0)
-    z0_c = z_traj[:, 0, :] - mu0
-    C0 = float((z0_c ** 2).sum()) / N
-    rho_sq_simple = {}
-    if C0 > 1e-12:
-        for lag, z_tau in log_data.items():
-            z_tau_c = z_tau - mu0
-            cross = float((z0_c * z_tau_c).sum()) / N
-            rho = cross / C0
-            rho_sq_simple[lag] = float(rho ** 2)
-
-    # Combine
-    all_lags = sorted(set(list(rho_sq_traj.keys()) + list(rho_sq_simple.keys())))
-    rho_sq_combined = {}
-    for lag in all_lags:
-        if lag in rho_sq_traj:
-            rho_sq_combined[lag] = rho_sq_traj[lag]
-        elif lag in rho_sq_simple:
-            rho_sq_combined[lag] = rho_sq_simple[lag]
-
-    # Free-conv floor truncation
-    sigma_f_sq = C0 / D if C0 > 0 else 1e-6
-    sigma_f = np.sqrt(sigma_f_sq)
-    tau_star = T
-
-    for lag in sorted(all_lags):
-        tau_phys = lag * dt
-        try:
-            _, lp = fc_edges(tau_phys, sigma=sigma_f, gamma=gamma)
-            rho_floor = (lp / C0) ** 2 if C0 > 0 else 0
-            if lag in rho_sq_combined and rho_sq_combined[lag] < rho_floor:
-                tau_star = lag
-                break
-        except Exception:
-            pass
-
-    # Integrate
-    valid_lags = sorted([l for l in rho_sq_combined if l <= tau_star])
-    if len(valid_lags) > 1:
-        phys = np.array([l * dt for l in valid_lags])
-        vals = np.array([rho_sq_combined[l] for l in valid_lags])
-        return float(np.trapz(vals, phys))
-    return 0.0
+def _ssa_1overN(rho_sq, dt, N):
+    """Shat with the 1/N first-crossing rule (crossing lag included)."""
+    from src.metrics.autocorrelation import aggregate_ssa
+    lags = np.array(sorted(rho_sq), dtype=float)
+    vals = np.array([rho_sq[int(l)] for l in lags])
+    below = np.where(vals <= 1.0 / N)[0]
+    L = below[0] + 1 if len(below) else len(vals)
+    return float(aggregate_ssa(vals[:L], lags=lags[:L] * dt)), int(lags[L - 1]), bool(len(below))
 
 
 def bootstrap_one_cell(npz_path, json_path, B=2000, seed=42):
-    """Run B bootstrap reps for one cell.
+    """Trajectory bootstrap of the pooled Shat (eq:c_hat_def + 1/N rule) for one cell.
 
-    Returns: (ssa_orig, se, ci_lo, ci_hi, ssa_boots)
+    Resamples the N trajectories with replacement and recomputes Shat end-to-end.
+    Each replicate is rebuilt from per-trajectory dot products, so its cost is
+    O(N n_t^2 + N n_t D). Before 2026-10 the replicates used a per-start-time
+    estimator (mean over start times of rho_s^2) truncated at the
+    free-convolution floor, which is biased upward and did not match the paper.
+
+    Returns: dict with shat, se, ci_lo, ci_hi, tau_star_steps, converged, boot.
     """
     data = np.load(npz_path)
-    z0 = data['z0_clip']
-    snapshot_lags = data['snapshot_lags']
-    N, D = z0.shape
-    gamma = D / N
-
     jdata = json.load(open(json_path))
     dt = jdata.get('dt', 0.005)
-    T = jdata.get('T', 2000)
 
-    # Build trajectory array
-    fixed20_lags = sorted([int(l) for l in snapshot_lags if l % 20 == 0 and l > 0])
-    log_lags = sorted([int(l) for l in snapshot_lags if l % 20 != 0 and l > 0])
-    fixed20_with_zero = [0] + fixed20_lags
-    n_times = len(fixed20_with_zero)
+    snap = sorted(int(l) for l in data['snapshot_lags'] if l > 0)
+    times = [0] + snap
+    Z = np.stack([data['z0_clip']] + [data[f'z_clip_{t}'] for t in snap], 1).astype(np.float64)
+    N, n_t, D = Z.shape
+    Zflat = Z.reshape(N, -1)
+    P = np.einsum('mid,mjd->mij', Z, Z)          # per-trajectory Gram (N, n_t, n_t)
+    idx = {t: i for i, t in enumerate(times)}
+    grid = [idx[t] for t in times if t % 20 == 0]
+    log_lags = [t for t in snap if t % 20 != 0]
+    log_idx = [idx[t] for t in log_lags]
 
-    z_traj = np.zeros((N, n_times, D), dtype=np.float32)
-    z_traj[:, 0, :] = z0
-    for i, lag in enumerate(fixed20_lags):
-        z_traj[:, i + 1, :] = data[f'z_clip_{lag}']
+    def one(c):
+        G = np.tensordot(c, P, axes=1)
+        mu = (c @ Zflat).reshape(n_t, D) / N
+        return _ssa_1overN(_pooled_rho_sq(G, mu @ mu.T, grid, log_idx, log_lags, N), dt, N)
 
-    log_data_full = {}
-    for lag in log_lags:
-        key = f'z_clip_{lag}'
-        if key in data:
-            log_data_full[lag] = data[key]
-
-    # Original estimate
-    ssa_orig = compute_traj_ssa_one_sample(
-        z_traj, fixed20_lags, fixed20_with_zero,
-        log_lags, log_data_full, dt, T, D, gamma)
-
-    # Bootstrap
+    shat, tau_star, converged = one(np.ones(N))
     rng = np.random.default_rng(seed)
-    ssa_boots = np.zeros(B)
+    boot = np.zeros(B)
     for b in range(B):
-        idx = rng.choice(N, size=N, replace=True)
-        z_traj_b = z_traj[idx]
-        log_data_b = {lag: arr[idx] for lag, arr in log_data_full.items()}
-        ssa_boots[b] = compute_traj_ssa_one_sample(
-            z_traj_b, fixed20_lags, fixed20_with_zero,
-            log_lags, log_data_b, dt, T, D, gamma)
+        c = np.bincount(rng.integers(0, N, N), minlength=N).astype(float)
+        boot[b] = one(c)[0]
 
-    se = float(ssa_boots.std())
-    ci_lo = float(np.percentile(ssa_boots, 2.5))
-    ci_hi = float(np.percentile(ssa_boots, 97.5))
-
-    return ssa_orig, se, ci_lo, ci_hi, ssa_boots
+    return dict(shat=shat, se=float(boot.std(ddof=1)),
+                ci_lo=float(np.percentile(boot, 2.5)), ci_hi=float(np.percentile(boot, 97.5)),
+                tau_star_steps=tau_star, converged_1overN=converged, boot=boot)
 
 
 # ============================================================
@@ -455,7 +385,11 @@ def compute_trajectory_averaged_C_sym(z0_clip, z_snapshots, snapshot_lags, targe
             all_z.append(z_snapshots.get(lag))
 
         available = [z for z in all_z if z is not None]
-        mu_traj = np.mean(np.stack(available, axis=1), axis=1, keepdims=True)
+        # 2026-10-17: center by ONE global mean over all trajectories and grid
+        # times (eq:c_hat_def), as compute_trajectory_averaged_ssa does. The old
+        # per-trajectory time mean removed the between-mode offset a metastable
+        # trajectory carries (appendix "Why Center by the Population Mean").
+        mu_global = np.stack(available, axis=1).mean(axis=(0, 1))  # (D,)
 
         C_sum = np.zeros((D, D), dtype=np.float64)
         n_pairs = 0
@@ -470,8 +404,8 @@ def compute_trajectory_averaged_C_sym(z0_clip, z_snapshots, snapshot_lags, targe
             if actual_lag != target_lag:
                 continue
 
-            z_i = all_z[i] - mu_traj.squeeze(1)
-            z_j = all_z[j] - mu_traj.squeeze(1)
+            z_i = all_z[i] - mu_global
+            z_j = all_z[j] - mu_global
             C_sum += (z_j.T @ z_i) / N
             n_pairs += 1
 
@@ -511,8 +445,10 @@ def spike_counting_pipeline(z0_clip, z_snapshots, snapshot_lags, dt):
     fixed20_with_zero = [0] + fixed20_lags
     available_z = [z0_clip] + [z_snapshots[l] for l in fixed20_lags if l in z_snapshots]
     z_stack = np.stack(available_z, axis=1)
-    mu_traj = z_stack.mean(axis=1, keepdims=True)
-    z_centered = z_stack - mu_traj
+    # 2026-10-17: global mean (eq:c_hat_def); a per-trajectory mean removed the
+    # between-mode variance and made sigma_f, hence the free-conv edge, too small.
+    mu_global = z_stack.mean(axis=(0, 1), keepdims=True)
+    z_centered = z_stack - mu_global
     sigma_f_sq = (z_centered ** 2).sum() / (N * z_stack.shape[1] * D)
     sigma_f = np.sqrt(sigma_f_sq)
 
@@ -723,12 +659,16 @@ def run_bootstrap(args):
             continue
 
         t0 = time.time()
-        ssa_orig, se, ci_lo, ci_hi, _ = bootstrap_one_cell(
-            npz_path, json_path, B=args.B)
+        r = bootstrap_one_cell(npz_path, json_path, B=args.B, seed=args.seed)
         elapsed = time.time() - t0
         results[name] = {
-            'ssa_traj': ssa_orig, 'se': se, 'ci_lo': ci_lo, 'ci_hi': ci_hi, 'B': args.B,
+            'ssa_traj': r['shat'], 'se': r['se'], 'ci_lo': r['ci_lo'], 'ci_hi': r['ci_hi'],
+            'B': args.B, 'seed': args.seed, 'estimator': 'pooled (eq:c_hat_def)',
+            'stopping_rule': '1/N first crossing', 'tau_star_steps': r['tau_star_steps'],
+            'converged_1overN': r['converged_1overN'],
+            'boot': [round(float(x), 6) for x in r['boot']],
         }
+        ssa_orig, se, ci_lo, ci_hi = r['shat'], r['se'], r['ci_lo'], r['ci_hi']
         print(f"  {name}: Ŝ={ssa_orig:.3f} ± {se:.3f} [{ci_lo:.3f}, {ci_hi:.3f}] ({elapsed:.0f}s)")
 
     # Save

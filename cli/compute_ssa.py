@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-Shared pipeline: given saved C(τ), compute SSA (Ŝ) + optional bootstrap CI.
+Shared pipeline: given saved C(τ), compute SSA (Ŝ) + optional bootstrap SE.
 
-Reads an NPZ file produced by cli/save_lags.py and computes the
-Sum of Squared Autocorrelations with free-convolution noise floor truncation.
+Reads an NPZ file produced by cli/save_lags.py and computes the paper's
+estimator (eq:ssa_estimator, eq:tmax_stopping):
+    ρ̂(τ) = tr Ĉ(τ) / tr Ĉ(0),
+    Ŝ = Δt Σ_{ℓ=1}^{L*} ρ̂(ℓΔt)²,
+with L* the first lag at which ρ̂² ≤ 1/N (that lag included; the full lag grid
+if ρ̂² never falls to the floor, in which case Ŝ is a finite-horizon lower bound).
 
 Usage (as library):
     from cli.compute_ssa import compute_ssa, bootstrap_ssa
 
 Usage (as CLI):
-    python -m cli.compute_ssa results/alanine_C_tau_full_h_half_10k.npz
+    python -m cli.compute_ssa results/alanine_C_tau_full_h_half_10k.npz [--bootstrap B]
 """
 import os, sys
 import numpy as np
@@ -18,130 +22,104 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.metrics.autocorrelation import aggregate_ssa
-from src.noise_floor.free_conv_utils import edges
 
 
-def compute_ssa(C_tau_path, floor='freeconv', floor_value=None):
+def ssa_from_rho_sq(rho_sq, lags, dt, N):
+    """Ŝ from ρ̂² at positive integer lags, truncated at the first 1/N crossing.
+
+    Args:
+        rho_sq: (L,) ρ̂(τ)² at lags `lags` (lag 0 excluded).
+        lags: (L,) increasing positive integer lags (in steps).
+        dt: time step.
+        N: number of trajectories (floor 1/N).
+
+    Returns:
+        (s_hat, n_used, converged): n_used lags integrated; converged is False if
+        ρ̂² never reached 1/N on the grid.
+    """
+    rho_sq = np.asarray(rho_sq, dtype=float)
+    lags = np.asarray(lags)
+    below = np.where(rho_sq <= 1.0 / N)[0]
+    n_used = int(below[0]) + 1 if len(below) else len(rho_sq)
+    if np.array_equal(lags[:n_used], np.arange(1, n_used + 1)):
+        s_hat = aggregate_ssa(rho_sq[:n_used], dt=dt)          # Δt Σ ρ̂², every step
+    else:
+        s_hat = aggregate_ssa(rho_sq[:n_used], lags=lags[:n_used] * dt)  # sparse grid: trapezoid
+    return float(s_hat), n_used, bool(len(below))
+
+
+def _rho_sq_from_traces(traces, lags):
+    if lags[0] != 0:
+        raise ValueError("lag 0 must be the first saved lag (it gives tr Ĉ(0))")
+    return (traces[1:] / traces[0]) ** 2
+
+
+def compute_ssa(C_tau_path):
     """Compute SSA (Ŝ) from saved autocovariance data.
 
     Args:
-        C_tau_path: path to NPZ from save_lags.py.
-        floor: 'freeconv' (default), '1overN', or 'fixed'.
-        floor_value: explicit floor value when floor='fixed'.
+        C_tau_path: path to NPZ from save_lags.py (lag 0 must be saved).
 
     Returns:
-        dict with keys: s_hat, rho_sq, phys_times, tau_star, n_lags_used.
+        dict with keys: s_hat, rho_sq, phys_times, tau_star, n_lags_used, converged.
+        rho_sq and phys_times exclude lag 0.
     """
     data = np.load(C_tau_path)
     eigenvalues = data['eigenvalues']   # (n_lags, d)
     phys_times = data['phys_times']     # (n_lags,)
-    sigma_f_sq = float(data['sigma_f_sq'])
-    gamma = float(data['gamma'])
-    d = int(data['d'])
     N = int(data['N'])
     dt = float(data['dt'])
-    sigma = np.sqrt(sigma_f_sq)
+    lags = np.rint(phys_times / dt).astype(int)
 
-    # Compute ρ²(τ) = (λ₁(τ) / (d · σ²_f))² for each lag
-    rho_sq = (eigenvalues[:, 0] / (d * sigma_f_sq)) ** 2
-
-    # Determine noise floor
-    if floor == 'freeconv':
-        # Free-conv upper edge at each lag
-        floors = np.array([edges(tau, sigma, gamma=gamma)[1] for tau in phys_times])
-        rho_sq_floor = (floors / (d * sigma_f_sq)) ** 2
-        # Truncate: use lags where rho_sq > floor
-        above = rho_sq > rho_sq_floor
-        if above.any():
-            last_above = np.where(above)[0][-1]
-            n_used = last_above + 1
-        else:
-            n_used = 1
-    elif floor == '1overN':
-        rho_sq_floor_val = 1.0 / N
-        above = rho_sq > rho_sq_floor_val
-        n_used = np.where(above)[0][-1] + 1 if above.any() else 1
-    elif floor == 'fixed':
-        above = rho_sq > floor_value
-        n_used = np.where(above)[0][-1] + 1 if above.any() else 1
-    else:
-        raise ValueError(f"Unknown floor type: {floor}")
-
-    # Skip lag 0 (ρ(0)=1 always), integrate lags 1..n_used
-    rho_sq_used = rho_sq[1:n_used]
-    s_hat = aggregate_ssa(rho_sq_used, dt=dt)
-
-    tau_star = phys_times[n_used - 1] if n_used > 0 else 0
+    rho_sq = _rho_sq_from_traces(eigenvalues.sum(axis=1), lags)   # tr C_sym = tr C
+    s_hat, n_used, converged = ssa_from_rho_sq(rho_sq, lags[1:], dt, N)
 
     return {
-        's_hat': float(s_hat),
+        's_hat': s_hat,
         'rho_sq': rho_sq,
-        'phys_times': phys_times,
-        'tau_star': float(tau_star),
-        'n_lags_used': int(n_used),
+        'phys_times': phys_times[1:],
+        'tau_star': float(phys_times[n_used]),
+        'n_lags_used': n_used,
+        'converged': converged,
     }
 
 
-def bootstrap_ssa(C_tau_path, B=2000, floor='freeconv', seed=42):
-    """Bootstrap confidence interval for SSA.
+def bootstrap_ssa(C_tau_path, B=2000, seed=42):
+    """Trajectory bootstrap SE for SSA.
 
-    Resamples N trajectories with replacement B times, recomputes Ŝ each time.
-    Requires that the NPZ contains per-trajectory data (Z_all key).
-
-    If Z_all is not available, falls back to a simpler lag-resampling bootstrap
-    using the stored eigenvalues.
-
-    Args:
-        C_tau_path: path to NPZ.
-        B: number of bootstrap replicates.
-        floor: noise floor type.
-        seed: RNG seed.
+    Resamples the N trajectories with replacement and recomputes Ŝ end-to-end
+    (pooled mean, trajectory-averaged Ĉ(τ), 1/N stopping rule, sum) for each of
+    the B replicates. Requires per-trajectory data (Z_all; see
+    save_lags(..., save_trajectories=True)).
 
     Returns:
         dict with keys: s_hat, se, ci_lo, ci_hi, s_hat_boots.
     """
-    rng = np.random.RandomState(seed)
-    base = compute_ssa(C_tau_path, floor=floor)
+    from cli.save_lags import compute_symmetrized_autocovariance
 
     data = np.load(C_tau_path)
+    if 'Z_all' not in data:
+        raise ValueError("NPZ must contain 'Z_all' (save_lags(..., save_trajectories=True))")
+    base = compute_ssa(C_tau_path)
+    Z_all = data['Z_all']   # (N, T+1, d)
+    N = Z_all.shape[0]
     dt = float(data['dt'])
+    lags = np.rint(data['phys_times'] / dt).astype(int)
 
-    if 'Z_all' in data:
-        # Full trajectory bootstrap
-        Z_all = data['Z_all']   # (N, T+1, d)
-        N = Z_all.shape[0]
-        lags = (data['phys_times'] / dt).astype(int)
-        from cli.save_lags import compute_symmetrized_autocovariance
-
-        boots = np.zeros(B)
-        for b in range(B):
-            idx = rng.choice(N, N, replace=True)
-            Z_b = Z_all[idx]
-            C_b = compute_symmetrized_autocovariance(Z_b, lags)
-            d_dim = Z_b.shape[2]
-            sigma_f_sq = float(data['sigma_f_sq'])
-            eigs_b = np.array([np.linalg.eigvalsh(C_b[i])[::-1] for i in range(len(lags))])
-            rho_sq_b = (eigs_b[:, 0] / (d_dim * sigma_f_sq)) ** 2
-            rho_sq_used = rho_sq_b[1:base['n_lags_used']]
-            boots[b] = aggregate_ssa(rho_sq_used, dt=dt)
-    else:
-        # Fallback: lag-block bootstrap (less accurate)
-        rho_sq = base['rho_sq']
-        n_used = base['n_lags_used']
-        boots = np.zeros(B)
-        for b in range(B):
-            idx = rng.choice(n_used - 1, n_used - 1, replace=True) + 1
-            boots[b] = aggregate_ssa(rho_sq[idx], dt=dt)
-
-    se = float(np.std(boots))
-    ci_lo = float(np.percentile(boots, 2.5))
-    ci_hi = float(np.percentile(boots, 97.5))
+    rng = np.random.RandomState(seed)
+    boots = np.zeros(B)
+    for b in range(B):
+        Z_b = Z_all[rng.choice(N, N, replace=True)]
+        Z_b = Z_b - Z_b.mean(axis=(0, 1))
+        C_b = compute_symmetrized_autocovariance(Z_b, lags)
+        rho_sq_b = _rho_sq_from_traces(np.trace(C_b, axis1=1, axis2=2), lags)
+        boots[b] = ssa_from_rho_sq(rho_sq_b, lags[1:], dt, N)[0]
 
     return {
         's_hat': base['s_hat'],
-        'se': se,
-        'ci_lo': ci_lo,
-        'ci_hi': ci_hi,
+        'se': float(np.std(boots, ddof=1)),
+        'ci_lo': float(np.percentile(boots, 2.5)),
+        'ci_hi': float(np.percentile(boots, 97.5)),
         's_hat_boots': boots,
     }
 
@@ -152,8 +130,9 @@ if __name__ == '__main__':
         sys.exit(1)
     path = sys.argv[1]
     result = compute_ssa(path)
-    print(f"Ŝ = {result['s_hat']:.4f}  (τ* = {result['tau_star']:.1f}, "
-          f"{result['n_lags_used']} lags used)")
+    print(f"Ŝ = {result['s_hat']:.4f}  (τ* = {result['tau_star']:.3f}, "
+          f"{result['n_lags_used']} lags used"
+          f"{'' if result['converged'] else '; 1/N floor not reached, lower bound'})")
 
     if '--bootstrap' in sys.argv:
         idx = sys.argv.index('--bootstrap')

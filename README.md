@@ -17,24 +17,31 @@ at a grid of lags.
 
 **Stage 2a — SSA** (`cli/compute_ssa.py`).
 At each lag compute the trace-normalized autocorrelation
-ρ̂(τ) = tr Ĉ(τ) / tr Ĉ(0).
-Truncate at the stopping lag where ρ̂(τ)² hits the 1/N noise floor. Sum:
+ρ̂(τ) = tr Ĉ(τ) / tr Ĉ(0), with Ĉ(τ) the trajectory-averaged lag-τ
+autocovariance centered at the pooled sample mean.
+Truncate at the first lag where ρ̂(τ)² ≤ 1/N (that lag included). Sum:
 **Ŝ = Δt · Σ ρ̂(ℓΔt)²**.
-This is a scalar in [0, ∞) that is zero for unimodal distributions and grows with mode separation.
+A unimodal isotropic Gaussian gives Ŝ ≈ 1; Ŝ grows with barrier height.
+Standard errors come from a trajectory bootstrap.
 
 **Stage 2b — DA directions** (`cli/compute_da.py`).
-Pick τ\* where the second eigenvalue crosses the noise floor. The eigenvectors
-of C_sym(τ\*) are the DA directions, ordered by metastability. DA1 points
-along the slowest-mixing axis of f.
+τ\*(m) is the largest lag at which (i) the top m eigenvalues of C_sym(τ) exceed
+the null threshold (the analytic free-convolution edge λ₊(τ), or the matched
+Gaussian Monte Carlo null with Bonferroni over the m directions), (ii) the 1D
+projection onto each of v₁…v_m rejects unimodality (dip test), and
+(iii) ρ̂(τ) < 1/e. The number of metastable directions is the largest m with a
+τ\*(m). The eigenvectors of C_sym(τ\*) are the DA directions, ordered by
+metastability.
 
 ### Code ↔ Paper Mapping
 
 | Paper | Code | Description |
 |-------|------|-------------|
-| Algorithm 1 | `cli/save_lags.py` | Langevin simulation + C_sym(τ) computation |
-| Eq. 3 (SSA) | `cli/compute_ssa.py` | Riemann-sum estimator with noise floor |
-| Def. 3 (DA) | `cli/compute_da.py` | Eigenvectors of C_sym(τ\*) |
-| Theorem 2 (noise floor) | `src/noise_floor/free_conv_utils.py` | Free-convolution upper edge λ₊(τ) |
+| Algorithm 1 (`alg:ssa_da`) | `cli/save_lags.py` | Langevin simulation + C_sym(τ) computation |
+| SSA estimator + 1/N stopping rule (`eq:ssa_estimator`, `eq:tmax_stopping`) | `cli/compute_ssa.py` | Riemann sum truncated at the first 1/N crossing; trajectory bootstrap |
+| DA lag-selection criterion (Section "DA") | `cli/compute_da.py` | τ\*(m), m̂, eigenvectors of C_sym(τ\*) |
+| Algorithm 2 (`alg:operational_floor`) | `cli/compute_da.py` (`da_significance`) | Matched-Gaussian Monte Carlo null |
+| Theorem 2 (`thm:limit-spectrum`) | `src/noise_floor/free_conv_utils.py` | Free-convolution upper edge λ₊(τ) |
 | Langevin integrator | `src/simulation/langevin.py` | Euler-Maruyama SDE solver |
 | KDE score estimator | `src/kde/kde_score.py` | ∇log f̂ for tabular data |
 | DDPM score (SDXL) | `experiments/sdxl/sdxl_components.py` | Tweedie denoiser as score oracle |
@@ -78,6 +85,13 @@ experiments/
   synthetic/            Section 7.1: GMM sweeps, planted spikes, ellipses, noise floor
   sdxl/                 Section 7.2: SDXL guidance sweep, elderly DA, crane
   alanine/              Section 7.3: alanine dipeptide KDE-DA, baselines, MC null
+  robustness/           Appendix "Additional Robustness and Scope Controls"
+    score_error/        Sensitivity to score-estimation error
+    numerics/           Numerical parameters (N, Δt, lag window; Gaussian vs ellipses)
+    sdxl_lag/           SDXL horizon and lag dependence (elderly DA across lags)
+    null_scope/         Scope of the analytic null (overlapping pairs, score error)
+    geometry/           Anisotropy, degenerate slow subspaces, and feature visibility
+    figures/            Output of the robustness figure scripts
 ```
 
 ---
@@ -144,8 +158,9 @@ sbatch experiments/sdxl/cluster/run_guidance_ssa.sh
 # Step 3: Trajectory-averaged SSA recompute (GPU, array 0-23):
 sbatch experiments/sdxl/cluster/run_traj_averaged.sh
 
-# Step 4: Bootstrap CIs (CPU, array 0-58):
+# Step 4: Bootstrap SEs (CPU, single job, ~10 min; pooled estimator, 1/N rule):
 sbatch experiments/sdxl/cluster/run_bootstrap_ssa.sh
+# Output: experiments/sdxl/results/bootstrap_pooled/bootstrap_<cell>.json
 ```
 
 **Elderly DA extraction** (Fig 4, A7, A8):
@@ -169,11 +184,6 @@ sbatch experiments/sdxl/cluster/run_sdxl_null.sh  # array 0-2, ~19h each
 ```bash
 sbatch experiments/sdxl/cluster/run_decode_crane.sh
 sbatch experiments/sdxl/cluster/run_decode_grids.sh
-```
-
-**Weight comparability** (Appendix H):
-```bash
-sbatch experiments/sdxl/cluster/run_weights.sh
 ```
 
 ### Alanine Dipeptide (Section 7.3)
@@ -206,6 +216,51 @@ cd experiments/alanine
 python fig_tica_its.py  # Fig A14: TICA implied timescales
 ```
 
+### Robustness and Scope Controls (Appendix "Additional Robustness and Scope Controls")
+
+Code in `experiments/robustness/`, one folder per subsection. SSA values use the
+paper's 1/N first-crossing stopping rule; result files tagged `_fc` (first
+crossing) are the ones the appendix reports. Small JSON/MD/CSV results are
+tracked; `.npz` arrays are not.
+
+**Sensitivity to score-estimation error** (`fig:rebuttal_score_error`):
+```bash
+sbatch experiments/robustness/score_error/cluster/run_score_robustness.sh        # GPU array 0-49
+sbatch experiments/robustness/score_error/cluster/run_score_robustness_merge.sh  # CPU, after the array
+cd experiments/robustness/score_error
+python analyze_absolute_sensitivity.py   # median / p90 |ΔŜ| -> results/p9_absolute_sensitivity_fc*
+python fig_score_error.py
+```
+
+**Numerical parameters** (`fig:rebuttal_numerics`):
+```bash
+sbatch experiments/robustness/numerics/cluster/run_numerical_robustness.sh   # N and Δt ladder
+sbatch experiments/robustness/numerics/cluster/run_dispersion_robustness.sh  # Gaussian vs ellipses grid
+cd experiments/robustness/numerics && python fig_numerical_robustness.py
+```
+
+**SDXL horizon and lag dependence** (elderly DA across lags; CPU, reads the
+elderly DA results in `experiments/sdxl/results/`):
+```bash
+cd experiments/robustness/sdxl_lag
+python reconcile_mc_null.py && python compute_lag_sensitivity.py   # -> RESULTS.md, results.json
+```
+
+**Scope of the analytic null** (`fig:rebuttal_null_score_error`):
+```bash
+sbatch experiments/robustness/null_scope/cluster/run_score_error_null.sh   # CPU
+cd experiments/robustness/null_scope && python fig_null_fpr.py
+```
+
+**Anisotropy, degenerate slow subspaces, and feature visibility**
+(`fig:rebuttal_geometry_gmm`, `fig:rebuttal_geometry_rings`):
+```bash
+sbatch experiments/robustness/geometry/cluster/run_four_mode_and_flat_top.sh   # CPU
+cd experiments/robustness/geometry
+python p3b_polar_da.py --ratio 8 --T 12000 --lags 250,1000,2000,3000           # two-shell rings, CPU
+python fig_da_subspace.py && python fig_rings.py
+```
+
 ---
 
 ## Reproducing Figures from Pre-computed Results
@@ -222,7 +277,7 @@ Once results are in place, figures regenerate locally in seconds (CPU-only):
 | Fig 1a-d (GMM sweeps) | `cd experiments/synthetic && python fig_gmm_sweeps.py` |
 | Fig 1e (dispersion) | `cd experiments/synthetic && python fig_dispersion.py` |
 | Fig 1f (parallel ellipses) | `cd experiments/synthetic && python fig_parallel_ellipses.py` |
-| Fig 3 (SDXL guidance) | `cd experiments/sdxl && python fig_sdxl_guidance.py` |
+| SDXL figure (`fig:sdxl_combined`) | `cd experiments/sdxl && python fig_sdxl_grids.py` |
 | Fig 4 (elderly DA grid) | `cd experiments/sdxl && python fig_elderly_da.py --mode grid` |
 | Fig 5 (alanine DA vs TICA) | `cd experiments/alanine && python fig_alanine_da_tica.py` |
 
@@ -243,15 +298,26 @@ Once results are in place, figures regenerate locally in seconds (CPU-only):
 | Fig A15 (planted spikes) | `cd experiments/synthetic && python fig_planted_spikes.py --npz results/fig_planted_spikes.npz` |
 | $A_0 = \sigma^2 I$ figure | `cd experiments/synthetic && python fig_a0_identity.py` |
 
+### Robustness appendix
+
+| Figure | Command |
+|--------|---------|
+| `fig:rebuttal_score_error` | `cd experiments/robustness/score_error && python fig_score_error.py` |
+| `fig:rebuttal_numerics` | `cd experiments/robustness/numerics && python fig_numerical_robustness.py` |
+| `fig:rebuttal_null_score_error` | `cd experiments/robustness/null_scope && python fig_null_fpr.py` |
+| `fig:rebuttal_geometry_gmm` | `cd experiments/robustness/geometry && python fig_da_subspace.py` |
+| `fig:rebuttal_geometry_rings` | `cd experiments/robustness/geometry && python fig_rings.py` |
+
+Outputs go to `experiments/robustness/figures/`.
+
 ### Tables
 
 | Table | Command |
 |-------|---------|
-| Table 1 (SDXL SSA + entropy) | `cd experiments/sdxl && python fig_sdxl_guidance.py` (prints to stdout) |
+| Table 1 + SE and full tables (SDXL SSA) | `cd experiments/sdxl && python table_sdxl_ssa.py` |
 | Table 2 (alanine lag sensitivity) | `cd experiments/alanine && python table_alanine_lag_sensitivity.py` |
 | Table 3 (alanine baselines) | `cd experiments/alanine && python table_alanine_baselines.py` |
 | Table 4 (Bonferroni significance) | `cd experiments/alanine && python table_alanine_bonferroni.py` |
-| App H (weight comparability) | `cd experiments/sdxl && python table_weights.py` |
 
 ---
 
@@ -290,7 +356,7 @@ training is required.
 | SDXL generation + entropy (Fig 3) | L40S | 28 | 196 |
 | SDXL traj-averaged recompute (Table 1) | L40S | 24 | 192 |
 | SDXL MC null (Table 4) | L40S | 3 | 57 |
-| SDXL bootstrap CIs (Table 1) | L40S | 59 | 30 |
+| SDXL bootstrap SEs (Table 1) | CPU | 1 | <1 |
 | SDXL elderly DA (Fig 4) | L40S | 1 | 24 |
 | SDXL C(tau) (Fig A7) | L40S | 1 | 20 |
 | SDXL decode grids + crane | L40S | 29 | 15 |

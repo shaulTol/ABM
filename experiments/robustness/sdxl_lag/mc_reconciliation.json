@@ -1,0 +1,80 @@
+{
+  "question": "Why does the same observed lambda_1 = 9.96e-3 give 8.1x in the project notes and ~2.1x in the rebuttal lag table?",
+  "observed_lambda1_at_Lstar": 0.009961887262761593,
+  "tau_star": 5.0,
+  "null_A_pipeline_anisotropic": {
+    "description": "17 real-SDXL Langevin replicates from N(mu, Sigma_hat_latent) initial latents, VAE+CLIP embedded; 850 pooled (z0, z_tau) pairs; bootstrap B=10000 draws of n=200; top-10 eigenvalues by magnitude; 'null max' = max over the 10000 draws of the rank-1 magnitude (per rank, not across ranks).",
+    "pool_file": "sdxl_null_anisotropic_combined.npz",
+    "N_big": 850,
+    "n_resample": 200,
+    "B_boot": 10000,
+    "seed": 20260502,
+    "stored_null_max_abs": 0.001232742355963622,
+    "recomputed_null_max_abs": 0.001232742355963622,
+    "exactly_reproduced": true,
+    "null_mean_signed": 0.00033268437541172273,
+    "null_mean_abs": 0.00046460060899494417,
+    "null_p95_abs": 0.0006910750421709256,
+    "ratio_obs_over_null_max": 8.081078105712113,
+    "ratio_obs_over_null_p95": 14.415058647563907
+  },
+  "null_B_analytic_OU_surrogate": {
+    "description": "fig_elderly_da.py recipe: x_tau = exp(-tau/2) z0 + sqrt(1-exp(-tau)) zeta with z0, zeta ~ N(0, C_hat(0)) in CLIP space; no SDXL dynamics. Independent replicates, not a bootstrap.",
+    "C0_source": "elderly_gs7p5_n200_C_tau_full.npz",
+    "lambda1_of_C0": 0.01586289486723344,
+    "rho_built_into_null": 0.0820849986238988,
+    "expected_systematic_top_eigenvalue_rho_times_lambda1_C0": 0.0013021057033479084,
+    "as_used_in_lag_table_200_reps_seed42": {
+      "null_p95": 0.0041089,
+      "null_max": 0.0046495,
+      "ratio_obs_over_null_p95": 2.424465736027061,
+      "ratio_obs_over_null_max": 2.1425717308875347
+    },
+    "under_null_A_bootstrap_procedure": {
+      "N_big": 850,
+      "n_resample": 200,
+      "B_boot": 10000,
+      "seed": 20260502,
+      "pool_seed": 777,
+      "null_max_abs": 0.006011787569113516,
+      "null_mean_signed": 0.0024640391734589693,
+      "null_mean_abs": 0.003036819144751316,
+      "null_p95_abs": 0.004140290236509125,
+      "ratio_obs_over_null_max": 1.6570590940275938
+    }
+  },
+  "replicate_count_control": {
+    "description": "Null B, independent replicates, running max of |lambda_1|. If replicate count explained the gap, more replicates would shrink the null max; it cannot, because a running maximum is non-decreasing.",
+    "seed": 42,
+    "checkpoints": [
+      {
+        "n_replicates": 200,
+        "null_max_abs": 0.004649482956255113,
+        "null_p95_abs": 0.004108886699624675,
+        "ratio_obs_over_null_max": 2.1425795849750378
+      },
+      {
+        "n_replicates": 1000,
+        "null_max_abs": 0.005430623246410015,
+        "null_p95_abs": 0.004037021117743402,
+        "ratio_obs_over_null_max": 1.8343911574692702
+      },
+      {
+        "n_replicates": 5000,
+        "null_max_abs": 0.006184913647940554,
+        "null_p95_abs": 0.004164325756724596,
+        "ratio_obs_over_null_max": 1.6106752381383194
+      }
+    ],
+    "null_max_is_monotone_nondecreasing_in_R": true,
+    "ratio_monotone_nonincreasing_in_R": true
+  },
+  "verdict": {
+    "cause": "null construction, not replicate count",
+    "both_internally_correct": true,
+    "explanation": "Null A's pooled null has essentially decorrelated by tau* (null_mean_signed = 3.327e-04), so its lambda_1 is pure finite-sample fluctuation. Null B BUILDS IN a lag-tau coupling of rho = exp(-tau*/2) = 0.0821 in every direction, including the top direction of C_hat(0); its systematic contribution alone is rho * lambda_1(C_hat(0)) = 1.302e-03, already about 1.1x Null A's entire null maximum, before any fluctuation is added. Holding the bootstrap procedure fixed and swapping only the construction moves the null max from 1.233e-03 (A) to 6.012e-03 (B), a factor of 4.9, which accounts for the discrepancy.",
+    "ratio_null_B_over_null_A_same_procedure": 4.876759154117134,
+    "apples_to_apples_margin_against_null_A": 8.081078105712113,
+    "apples_to_apples_margin_against_null_B": 1.6570590940275938
+  }
+}

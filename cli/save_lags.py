@@ -46,7 +46,7 @@ def compute_symmetrized_autocovariance(Z, lags):
 
 
 def save_lags(score_fn, X0, sigma_f_sq, dt, T_steps, lags, out_path,
-              device='cpu', dtype=torch.float64, seed=None):
+              device='cpu', dtype=torch.float64, seed=None, save_trajectories=False):
     """Simulate Langevin and save autocovariance data.
 
     Args:
@@ -60,6 +60,11 @@ def save_lags(score_fn, X0, sigma_f_sq, dt, T_steps, lags, out_path,
         device: torch device.
         dtype: torch dtype.
         seed: optional RNG seed.
+        save_trajectories: also store the centered trajectories as Z_all, which
+            the trajectory bootstrap (cli.compute_ssa) and the unimodality tests
+            (cli.compute_da) need.
+
+    Lag 0 should be in `lags`: it gives tr Ĉ(0), the normalizer of ρ̂(τ).
 
     Saves NPZ with keys:
         C_tau_all: (n_lags, d, d) symmetrized autocovariance matrices.
@@ -70,6 +75,8 @@ def save_lags(score_fn, X0, sigma_f_sq, dt, T_steps, lags, out_path,
         d: dimensionality.
         N: number of trajectories.
         dt: time step.
+        T_steps: number of Langevin steps.
+        Z_all: (N, T+1, d) centered trajectories (only if save_trajectories).
     """
     if seed is not None:
         torch.manual_seed(seed)
@@ -109,6 +116,7 @@ def save_lags(score_fn, X0, sigma_f_sq, dt, T_steps, lags, out_path,
     gamma = d / N
 
     os.makedirs(os.path.dirname(out_path) or '.', exist_ok=True)
+    extra = {'Z_all': Z} if save_trajectories else {}
     np.savez(out_path,
              C_tau_all=C_tau_all,
              eigenvalues=eigenvalues,
@@ -117,7 +125,9 @@ def save_lags(score_fn, X0, sigma_f_sq, dt, T_steps, lags, out_path,
              gamma=gamma,
              d=d,
              N=N,
-             dt=dt)
+             dt=dt,
+             T_steps=T_steps,
+             **extra)
     print(f'Saved: {out_path}  ({len(lags)} lags, d={d}, N={N})')
 
 

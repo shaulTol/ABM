@@ -1,33 +1,36 @@
 #!/bin/bash
 #SBATCH --job-name=traj_bootstrap
-#SBATCH --partition=salmon
-#SBATCH --gres=gpu:1
-#SBATCH --mem=32G
-#SBATCH --cpus-per-task=4
+#SBATCH --partition=glacier
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=16G
 #SBATCH --time=3:00:00
-#SBATCH --array=0-58
-#SBATCH --output=results/logs/bootstrap_%a_%j.out
-#SBATCH --error=results/logs/bootstrap_%a_%j.err
+#SBATCH --output=results/logs/bootstrap_%j.out
+#SBATCH --error=results/logs/bootstrap_%j.err
+
+# Trajectory bootstrap (B=2000) of the pooled SDXL Shat (eq:c_hat_def, 1/N
+# stopping rule) for all 56 guidance-sweep cells (dt=0.005). CPU only; about
+# 10 s per cell. Reads the per-trajectory CLIP snapshots written by
+# run_traj_averaged.sh (z_clip_traj_<cell>.npz, next to traj_avg_<cell>.json)
+# and writes one JSON per cell to results/bootstrap_pooled/.
 
 export PYTHONUNBUFFERED=1
 export PATH=<CONDA_BIN>:$PATH
 source <CONDA_SH>
 conda activate <CONDA_ENV>
 
-NV_BASE=<NV_SITE_PACKAGES>
-export LD_LIBRARY_PATH=$NV_BASE/cublas/lib:$NV_BASE/cuda_cupti/lib:$NV_BASE/cuda_nvrtc/lib:$NV_BASE/cuda_runtime/lib:$NV_BASE/cudnn/lib:$NV_BASE/cufft/lib:$NV_BASE/cusolver/lib:$NV_BASE/cusparse/lib:$LD_LIBRARY_PATH
-export LD_LIBRARY_PATH=<USER_SITE_PACKAGES>/nccl/lib:<USER_SITE_PACKAGES>/nvjitlink/lib:$LD_LIBRARY_PATH
-export LD_LIBRARY_PATH=<TORCH_LIB>:$LD_LIBRARY_PATH
-
 cd <PROJECT_DIR>/experiments/sdxl
 
-mkdir -p results/logs
+CLIP_DIR=${CLIP_DIR:-results}          # where z_clip_traj_*.npz and traj_avg_*.json live
+OUT_DIR=results/bootstrap_pooled
+mkdir -p results/logs "$OUT_DIR"
 
-# Get the cell name from sorted NPZ list
-CELL=$(ls results/z_clip_traj_*.npz | sort | sed -n "$((SLURM_ARRAY_TASK_ID + 1))p" | sed 's|results/z_clip_traj_||;s/.npz//')
-
-echo "=== Bootstrap: cell=$CELL, array_id=$SLURM_ARRAY_TASK_ID ==="
-
-python3 -u traj_averaged_pipeline.py --B 2000 --cell "$CELL" --output "results/bootstrap_${CELL}.json"
-
-echo "Done: $CELL"
+n=0
+for npz in $(ls "$CLIP_DIR"/z_clip_traj_*_dt0p005.npz | sort); do
+  cell=$(basename "$npz" .npz); cell=${cell#z_clip_traj_}
+  python3 -u traj_averaged_pipeline.py --mode bootstrap --name bootstrap \
+      --clip_traj "$npz" --B 2000 --seed 42 \
+      --output_dir "$OUT_DIR" --bootstrap_output "bootstrap_${cell}.json" \
+      || echo "FAILED $cell"
+  n=$((n+1))
+done
+echo "Done: $n cells"

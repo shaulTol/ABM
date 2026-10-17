@@ -1,0 +1,461 @@
+{
+  "workstream": "P8: SDXL DA lag-sensitivity",
+  "sources": {
+    "da_npz": "experiments/sdxl/results/clip_da_elderly_gs7p5_fc_dt0p0025.npz",
+    "da_json": "experiments/sdxl/results/clip_da_elderly_gs7p5_fc_dt0p0025.json",
+    "z_npz": "experiments/sdxl/results/clip_da_elderly_gs7p5_fc_z_tau.npz",
+    "traj_json": "experiments/sdxl/results/traj_avg_elderly_gs7p5_dt0p0025.json",
+    "C_tau_full_npz_for_mc": "experiments/sdxl/results/elderly_gs7p5_n200_C_tau_full.npz"
+  },
+  "config": {
+    "prompt": "a portrait of an elderly person",
+    "guidance_scale": 7.5,
+    "dt": 0.0025,
+    "T_steps": 2000,
+    "N": 200,
+    "embed_dim": 768,
+    "L_star": 2000,
+    "tau_star_phys": 5.0,
+    "clip_model": "openai/clip-vit-large-patch14",
+    "gender_probe_positive": "a photograph of a man",
+    "gender_probe_negative": "a photograph of a woman",
+    "gender_axis_route": "recomputed with real CLIP text encoder (axis not stored in NPZ/JSON; only cosines and correlations were stored)",
+    "evaluation_set": "centered z0_reembed (re-embedded initial samples)",
+    "mc_reps": 200,
+    "mc_seed": 42,
+    "freeconv_gamma": 3.84,
+    "freeconv_sigma_f_sq": 0.00011212453246116638,
+    "freeconv_first_cross_idx": -1
+  },
+  "sanity_checks": {
+    "check5_lag_array_compatibility": {
+      "passed": true,
+      "n_snapshot_lags": 111,
+      "n_lambda_plus_profile": 111,
+      "n_eigvec_keys": 111,
+      "n_eigenvalue_keys": 111,
+      "lags_strictly_increasing": true,
+      "keys_match_snapshot_lags": true,
+      "lambda2_profile_max_abs_err_vs_recompute": 0.0
+    },
+    "check3_C_tau_star_eigvec": {
+      "passed": true,
+      "abs_inner_product": 0.999999999999913,
+      "sign_invariant_angle_deg": 2.39056620950448e-05,
+      "lambda1_from_C_tau_star": 0.00996187920627867,
+      "criterion": "abs inner product > 0.999 (sign-invariant)"
+    },
+    "check4_lambda1_at_Lstar": {
+      "passed": true,
+      "lambda1_2000": 0.009961887262761593,
+      "target": 0.00996,
+      "rel_error": 0.00018948421301132146
+    },
+    "check1_angle_zero_at_Lstar": {
+      "passed": true,
+      "angle_deg": 0.0,
+      "tolerance_deg": 0.001
+    },
+    "check2_gender_rho_at_Lstar": {
+      "passed": true,
+      "abs_rho": 0.9174982598050981,
+      "target": 0.9,
+      "tolerance": 0.03,
+      "reported_paper_rho_at_peak_gap_lag_1400": 0.9114867447079421
+    }
+  },
+  "axis_provenance_validation": {
+    "passed": true,
+    "abs_cos_recomputed": 0.5683474665676552,
+    "abs_cos_stored_in_json": 0.5683473348617554,
+    "note": "orientation differs by a sign (pipeline probe is woman - man, fig_elderly_da.py probe is man - woman); |cos| must match"
+  },
+  "rows": [
+    {
+      "L": 1,
+      "tau_phys": 0.0025,
+      "lambda1": 0.016453158110380173,
+      "lambda2": 0.013350575231015682,
+      "lambda2_over_lambda1": 0.8114293402792322,
+      "sign_flipped_vs_Lstar": false,
+      "angle_to_v1_Lstar_deg": 71.63759160874754,
+      "spearman_rho_gender": 0.3378828428784023,
+      "abs_spearman_rho_gender": 0.3378828428784023,
+      "spearman_pvalue": 9.925612677454051e-07,
+      "rho_sq_traj_averaged": null,
+      "rho_sq_simple_pair": 0.981593731002269,
+      "lambda_plus_analytic": 0.0009814359183917968,
+      "lambda1_over_lambda_plus": 16.764373304515583,
+      "above_analytic_reference": true,
+      "noise_dominated_analytic": false,
+      "mc_null_p95": 0.019258236245802494,
+      "mc_null_max": 0.02054936520700258,
+      "lambda1_over_mc_p95": 0.854343975241569,
+      "mc_rejected": false,
+      "noise_dominated_mc": true,
+      "noise_dominated": true,
+      "abs_cos_with_pc1": 0.9133434169624784
+    },
+    {
+      "L": 20,
+      "tau_phys": 0.05,
+      "lambda1": 0.014691712334752083,
+      "lambda2": 0.013619901612401009,
+      "lambda2_over_lambda1": 0.9270465757884606,
+      "sign_flipped_vs_Lstar": true,
+      "angle_to_v1_Lstar_deg": 59.99164413588632,
+      "spearman_rho_gender": 0.42819745811530885,
+      "abs_spearman_rho_gender": 0.42819745811530885,
+      "spearman_pvalue": 2.5329410310489266e-10,
+      "rho_sq_traj_averaged": 0.7768816164402497,
+      "rho_sq_simple_pair": 0.8222921942750498,
+      "lambda_plus_analytic": 0.00096862223702324,
+      "lambda1_over_lambda_plus": 15.167638913496868,
+      "above_analytic_reference": true,
+      "noise_dominated_analytic": false,
+      "mc_null_p95": 0.01874276312166543,
+      "mc_null_max": 0.020169671399314207,
+      "lambda1_over_mc_p95": 0.7838605353641485,
+      "mc_rejected": false,
+      "noise_dominated_mc": true,
+      "noise_dominated": true,
+      "abs_cos_with_pc1": 0.22517163031753482
+    },
+    {
+      "L": 60,
+      "tau_phys": 0.15,
+      "lambda1": 0.014435461722314358,
+      "lambda2": 0.013053981587290764,
+      "lambda2_over_lambda1": 0.9042995533084959,
+      "sign_flipped_vs_Lstar": true,
+      "angle_to_v1_Lstar_deg": 48.40105968757007,
+      "spearman_rho_gender": 0.635325656473525,
+      "abs_spearman_rho_gender": 0.635325656473525,
+      "spearman_pvalue": 5.2765198453726895e-24,
+      "rho_sq_traj_averaged": 0.6712330339495277,
+      "rho_sq_simple_pair": 0.751638871165602,
+      "lambda_plus_analytic": 0.0009426843373587629,
+      "lambda1_over_lambda_plus": 15.313144761437327,
+      "above_analytic_reference": true,
+      "noise_dominated_analytic": false,
+      "mc_null_p95": 0.017809760618572458,
+      "mc_null_max": 0.019290458012332617,
+      "lambda1_over_mc_p95": 0.8105365384451435,
+      "mc_rejected": false,
+      "noise_dominated_mc": true,
+      "noise_dominated": true,
+      "abs_cos_with_pc1": 0.007321581634653532
+    },
+    {
+      "L": 160,
+      "tau_phys": 0.4,
+      "lambda1": 0.014031343162059784,
+      "lambda2": 0.011261302046477795,
+      "lambda2_over_lambda1": 0.8025818994241354,
+      "sign_flipped_vs_Lstar": true,
+      "angle_to_v1_Lstar_deg": 32.7961128163779,
+      "spearman_rho_gender": 0.7917886803321972,
+      "abs_spearman_rho_gender": 0.7917886803321972,
+      "spearman_pvalue": 2.8872767461792688e-44,
+      "rho_sq_traj_averaged": 0.4565927369042994,
+      "rho_sq_simple_pair": 0.6487252798108055,
+      "lambda_plus_analytic": 0.0008835720468607889,
+      "lambda1_over_lambda_plus": 15.880247923088145,
+      "above_analytic_reference": true,
+      "noise_dominated_analytic": false,
+      "mc_null_p95": 0.015874965597131186,
+      "mc_null_max": 0.017194658194930865,
+      "lambda1_over_mc_p95": 0.8838660516275658,
+      "mc_rejected": false,
+      "noise_dominated_mc": true,
+      "noise_dominated": true,
+      "abs_cos_with_pc1": 0.33914667895058354
+    },
+    {
+      "L": 400,
+      "tau_phys": 1.0,
+      "lambda1": 0.013374156318604946,
+      "lambda2": 0.009987633675336838,
+      "lambda2_over_lambda1": 0.7467860728861769,
+      "sign_flipped_vs_Lstar": true,
+      "angle_to_v1_Lstar_deg": 30.250887866756884,
+      "spearman_rho_gender": 0.8126440161298065,
+      "abs_spearman_rho_gender": 0.8126440161298065,
+      "spearman_pvalue": 2.564944688503441e-48,
+      "rho_sq_traj_averaged": 0.08990405151879668,
+      "rho_sq_simple_pair": 0.4841711396021072,
+      "lambda_plus_analytic": 0.0007699205240923929,
+      "lambda1_over_lambda_plus": 17.37082711799485,
+      "above_analytic_reference": true,
+      "noise_dominated_analytic": false,
+      "mc_null_p95": 0.012263490685976186,
+      "mc_null_max": 0.0133097153722311,
+      "lambda1_over_mc_p95": 1.0905668427586326,
+      "mc_rejected": true,
+      "noise_dominated_mc": false,
+      "noise_dominated": false,
+      "abs_cos_with_pc1": 0.38228239192552677
+    },
+    {
+      "L": 800,
+      "tau_phys": 2.0,
+      "lambda1": 0.01171879842877388,
+      "lambda2": 0.007485390640795231,
+      "lambda2_over_lambda1": 0.638750694987286,
+      "sign_flipped_vs_Lstar": false,
+      "angle_to_v1_Lstar_deg": 19.192728245642368,
+      "spearman_rho_gender": 0.8938451106523931,
+      "abs_spearman_rho_gender": 0.8938451106523931,
+      "spearman_pvalue": 6.705228400069261e-71,
+      "rho_sq_traj_averaged": 0.08220573935566945,
+      "rho_sq_simple_pair": 0.26773073756574167,
+      "lambda_plus_analytic": 0.0006445673728650052,
+      "lambda1_over_lambda_plus": 18.180874369556715,
+      "above_analytic_reference": true,
+      "noise_dominated_analytic": false,
+      "mc_null_p95": 0.008379391498224736,
+      "mc_null_max": 0.00892692912971885,
+      "lambda1_over_mc_p95": 1.3985261854940938,
+      "mc_rejected": true,
+      "noise_dominated_mc": false,
+      "noise_dominated": false,
+      "abs_cos_with_pc1": 0.5676141805502395
+    },
+    {
+      "L": 1400,
+      "tau_phys": 3.5,
+      "lambda1": 0.011667572893202305,
+      "lambda2": 0.005345740355551243,
+      "lambda2_over_lambda1": 0.458170727064045,
+      "sign_flipped_vs_Lstar": true,
+      "angle_to_v1_Lstar_deg": 11.288270383300752,
+      "spearman_rho_gender": 0.910027423071384,
+      "abs_spearman_rho_gender": 0.910027423071384,
+      "spearman_pvalue": 1.1840815791107388e-77,
+      "rho_sq_traj_averaged": 0.6095478969241519,
+      "rho_sq_simple_pair": 0.12562777077474802,
+      "lambda_plus_analytic": 0.0005447757603788439,
+      "lambda1_over_lambda_plus": 21.417202713073223,
+      "above_analytic_reference": true,
+      "noise_dominated_analytic": false,
+      "mc_null_p95": 0.005451293216048077,
+      "mc_null_max": 0.005961247741766302,
+      "lambda1_over_mc_p95": 2.140331189460531,
+      "mc_rejected": true,
+      "noise_dominated_mc": false,
+      "noise_dominated": false,
+      "abs_cos_with_pc1": 0.5667127639848122
+    },
+    {
+      "L": 2000,
+      "tau_phys": 5.0,
+      "lambda1": 0.009961887262761593,
+      "lambda2": 0.005123412702232599,
+      "lambda2_over_lambda1": 0.5143014136873808,
+      "sign_flipped_vs_Lstar": false,
+      "angle_to_v1_Lstar_deg": 0.0,
+      "spearman_rho_gender": 0.9174982598050981,
+      "abs_spearman_rho_gender": 0.9174982598050981,
+      "spearman_pvalue": 3.2408386477443104e-81,
+      "rho_sq_traj_averaged": 0.40922899653926437,
+      "rho_sq_simple_pair": 0.06401188507591957,
+      "lambda_plus_analytic": 0.0004983819380857438,
+      "lambda1_over_lambda_plus": 19.988459656111587,
+      "above_analytic_reference": true,
+      "noise_dominated_analytic": false,
+      "mc_null_p95": 0.004108886699624675,
+      "mc_null_max": 0.004649482956255113,
+      "lambda1_over_mc_p95": 2.424473583969,
+      "mc_rejected": true,
+      "noise_dominated_mc": false,
+      "noise_dominated": false,
+      "abs_cos_with_pc1": 0.5415455013460517
+    }
+  ],
+  "monte_carlo_null": {
+    "1": {
+      "lambda1_mc_null_p95": 0.019258236245802494,
+      "lambda1_mc_null_max": 0.02054936520700258
+    },
+    "20": {
+      "lambda1_mc_null_p95": 0.01874276312166543,
+      "lambda1_mc_null_max": 0.020169671399314207
+    },
+    "60": {
+      "lambda1_mc_null_p95": 0.017809760618572458,
+      "lambda1_mc_null_max": 0.019290458012332617
+    },
+    "160": {
+      "lambda1_mc_null_p95": 0.015874965597131186,
+      "lambda1_mc_null_max": 0.017194658194930865
+    },
+    "400": {
+      "lambda1_mc_null_p95": 0.012263490685976186,
+      "lambda1_mc_null_max": 0.0133097153722311
+    },
+    "800": {
+      "lambda1_mc_null_p95": 0.008379391498224736,
+      "lambda1_mc_null_max": 0.00892692912971885
+    },
+    "1400": {
+      "lambda1_mc_null_p95": 0.005451293216048077,
+      "lambda1_mc_null_max": 0.005961247741766302
+    },
+    "2000": {
+      "lambda1_mc_null_p95": 0.004108886699624675,
+      "lambda1_mc_null_max": 0.004649482956255113
+    }
+  },
+  "stationarity_sensitivity_z_tau": [
+    {
+      "L": 1,
+      "abs_spearman_rho_gender_ztau": 0.49789544738618474
+    },
+    {
+      "L": 20,
+      "abs_spearman_rho_gender_ztau": 0.4786394659866497
+    },
+    {
+      "L": 60,
+      "abs_spearman_rho_gender_ztau": 0.6178999474986876
+    },
+    {
+      "L": 160,
+      "abs_spearman_rho_gender_ztau": 0.7574499362484063
+    },
+    {
+      "L": 400,
+      "abs_spearman_rho_gender_ztau": 0.7754578864471613
+    },
+    {
+      "L": 800,
+      "abs_spearman_rho_gender_ztau": 0.8936308407710195
+    },
+    {
+      "L": 1400,
+      "abs_spearman_rho_gender_ztau": 0.8941348533713345
+    },
+    {
+      "L": 2000,
+      "abs_spearman_rho_gender_ztau": 0.8955688892222307
+    }
+  ],
+  "summary": {
+    "n_lags_reported": 8,
+    "n_lags_above_noise_reference": 4,
+    "n_lags_noise_dominated": 4,
+    "noise_reference_used": "conservative: analytic free-conv edge AND matched MC null (95th pctl)",
+    "max_meaningful_angle_deg": 30.250887866756884,
+    "gender_abs_rho_at_Lstar": 0.9174982598050981,
+    "all_sanity_checks_passed": true,
+    "conservative_n_lags": 4,
+    "conservative_lags": [
+      400,
+      800,
+      1400,
+      2000
+    ],
+    "conservative_max_meaningful_angle_deg": 30.250887866756884,
+    "conservative_max_meaningful_angle_at_L": 400,
+    "conservative_gender_abs_rho_min": 0.8126440161298065,
+    "conservative_gender_abs_rho_max": 0.9174982598050981,
+    "analytic_edge_only_n_lags": 8,
+    "analytic_edge_only_lags": [
+      1,
+      20,
+      60,
+      160,
+      400,
+      800,
+      1400,
+      2000
+    ],
+    "analytic_edge_only_max_meaningful_angle_deg": 71.63759160874754,
+    "analytic_edge_only_max_meaningful_angle_at_L": 1,
+    "analytic_edge_only_gender_abs_rho_min": 0.3378828428784023,
+    "analytic_edge_only_gender_abs_rho_max": 0.9174982598050981,
+    "max_meaningful_angle_at_L": 400,
+    "gender_abs_rho_min": 0.8126440161298065,
+    "gender_abs_rho_max": 0.9174982598050981
+  },
+  "mc_reconciliation": {
+    "question": "Why does the same observed lambda_1 = 9.96e-3 give 8.1x in the project notes and ~2.1x in the rebuttal lag table?",
+    "observed_lambda1_at_Lstar": 0.009961887262761593,
+    "tau_star": 5.0,
+    "null_A_pipeline_anisotropic": {
+      "description": "17 real-SDXL Langevin replicates from N(mu, Sigma_hat_latent) initial latents, VAE+CLIP embedded; 850 pooled (z0, z_tau) pairs; bootstrap B=10000 draws of n=200; top-10 eigenvalues by magnitude; 'null max' = max over the 10000 draws of the rank-1 magnitude (per rank, not across ranks).",
+      "pool_file": "sdxl_null_anisotropic_combined.npz",
+      "N_big": 850,
+      "n_resample": 200,
+      "B_boot": 10000,
+      "seed": 20260502,
+      "stored_null_max_abs": 0.001232742355963622,
+      "recomputed_null_max_abs": 0.001232742355963622,
+      "exactly_reproduced": true,
+      "null_mean_signed": 0.00033268437541172273,
+      "null_mean_abs": 0.00046460060899494417,
+      "null_p95_abs": 0.0006910750421709256,
+      "ratio_obs_over_null_max": 8.081078105712113,
+      "ratio_obs_over_null_p95": 14.415058647563907
+    },
+    "null_B_analytic_OU_surrogate": {
+      "description": "fig_elderly_da.py recipe: x_tau = exp(-tau/2) z0 + sqrt(1-exp(-tau)) zeta with z0, zeta ~ N(0, C_hat(0)) in CLIP space; no SDXL dynamics. Independent replicates, not a bootstrap.",
+      "C0_source": "elderly_gs7p5_n200_C_tau_full.npz",
+      "lambda1_of_C0": 0.01586289486723344,
+      "rho_built_into_null": 0.0820849986238988,
+      "expected_systematic_top_eigenvalue_rho_times_lambda1_C0": 0.0013021057033479084,
+      "as_used_in_lag_table_200_reps_seed42": {
+        "null_p95": 0.0041089,
+        "null_max": 0.0046495,
+        "ratio_obs_over_null_p95": 2.424465736027061,
+        "ratio_obs_over_null_max": 2.1425717308875347
+      },
+      "under_null_A_bootstrap_procedure": {
+        "N_big": 850,
+        "n_resample": 200,
+        "B_boot": 10000,
+        "seed": 20260502,
+        "pool_seed": 777,
+        "null_max_abs": 0.006011787569113516,
+        "null_mean_signed": 0.0024640391734589693,
+        "null_mean_abs": 0.003036819144751316,
+        "null_p95_abs": 0.004140290236509125,
+        "ratio_obs_over_null_max": 1.6570590940275938
+      }
+    },
+    "replicate_count_control": {
+      "description": "Null B, independent replicates, running max of |lambda_1|. If replicate count explained the gap, more replicates would shrink the null max; it cannot, because a running maximum is non-decreasing.",
+      "seed": 42,
+      "checkpoints": [
+        {
+          "n_replicates": 200,
+          "null_max_abs": 0.004649482956255113,
+          "null_p95_abs": 0.004108886699624675,
+          "ratio_obs_over_null_max": 2.1425795849750378
+        },
+        {
+          "n_replicates": 1000,
+          "null_max_abs": 0.005430623246410015,
+          "null_p95_abs": 0.004037021117743402,
+          "ratio_obs_over_null_max": 1.8343911574692702
+        },
+        {
+          "n_replicates": 5000,
+          "null_max_abs": 0.006184913647940554,
+          "null_p95_abs": 0.004164325756724596,
+          "ratio_obs_over_null_max": 1.6106752381383194
+        }
+      ],
+      "null_max_is_monotone_nondecreasing_in_R": true,
+      "ratio_monotone_nonincreasing_in_R": true
+    },
+    "verdict": {
+      "cause": "null construction, not replicate count",
+      "both_internally_correct": true,
+      "explanation": "Null A's pooled null has essentially decorrelated by tau* (null_mean_signed = 3.327e-04), so its lambda_1 is pure finite-sample fluctuation. Null B BUILDS IN a lag-tau coupling of rho = exp(-tau*/2) = 0.0821 in every direction, including the top direction of C_hat(0); its systematic contribution alone is rho * lambda_1(C_hat(0)) = 1.302e-03, already about 1.1x Null A's entire null maximum, before any fluctuation is added. Holding the bootstrap procedure fixed and swapping only the construction moves the null max from 1.233e-03 (A) to 6.012e-03 (B), a factor of 4.9, which accounts for the discrepancy.",
+      "ratio_null_B_over_null_A_same_procedure": 4.876759154117134,
+      "apples_to_apples_margin_against_null_A": 8.081078105712113,
+      "apples_to_apples_margin_against_null_B": 1.6570590940275938
+    }
+  }
+}

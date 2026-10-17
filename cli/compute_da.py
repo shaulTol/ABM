@@ -2,15 +2,24 @@
 """
 Shared pipeline: given saved C(τ), compute DA directions + significance.
 
-Reads an NPZ file produced by cli/save_lags.py and computes the
-Diffusion-Autocorrelation (DA) directions — eigenvectors of the symmetrized
+Reads an NPZ file produced by cli/save_lags.py and computes the DA
+(Dominant Autocorrelation) directions: eigenvectors of the symmetrized
 autocovariance C_sym(τ*) at the selected lag.
+
+Lag selection (paper, Section "DA"): τ*(m) is the largest lag at which
+  (i)   each of the top m eigenvalues of C_sym(τ) exceeds the null threshold
+        (here the analytic edge λ₊(τ) of Theorem 2; da_significance gives the
+        matched Monte Carlo null of Algorithm 2, Bonferroni over the m directions),
+  (ii)  the 1D projection onto each of v_1..v_m rejects unimodality
+        (Hartigan's dip test, Bonferroni over the m directions; needs Z_all), and
+  (iii) ρ̂(τ) = tr Ĉ(τ)/tr Ĉ(0) < 1/e.
+The number of metastable directions m̂ is the largest m for which τ*(m) exists.
 
 Usage (as library):
     from cli.compute_da import compute_da, da_significance, select_tau_star
 
 Usage (as CLI):
-    python -m cli.compute_da results/alanine_C_tau_full_h_half_10k.npz
+    python -m cli.compute_da results/alanine_C_tau_full_h_half_10k.npz [--significance B]
 """
 import os, sys
 import numpy as np
@@ -20,43 +29,71 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.noise_floor.free_conv_utils import edges, edge_tauinf
 
 
-def select_tau_star(eigenvalues, phys_times, sigma_f_sq, gamma, k=2):
-    """Auto-select lag τ* where the k-th eigenvalue crosses the free-conv floor.
+def dip_pvalues(Z_all, C_sym, m, max_points=20000, seed=0):
+    """Hartigan dip-test p-values of the pooled samples projected on v_1..v_m."""
+    import diptest
+    X = Z_all.reshape(-1, Z_all.shape[-1])
+    if len(X) > max_points:
+        X = X[np.random.RandomState(seed).choice(len(X), max_points, replace=False)]
+    evals, evecs = np.linalg.eigh(C_sym)
+    V = evecs[:, np.argsort(evals)[::-1][:m]]
+    return np.array([diptest.diptest(X @ V[:, j])[1] for j in range(m)])
 
-    The DA directions are meaningful as long as the top-k eigenvalues stay
-    above the free-convolution upper edge λ₊(τ). τ* is the largest lag
-    where λ_k(τ) > λ₊(τ).
+
+def select_tau_star(eigenvalues, phys_times, sigma_f_sq, gamma, m=1,
+                    C_tau_all=None, Z_all=None, alpha=0.05):
+    """Largest lag satisfying the paper's three conditions for m directions.
 
     Args:
-        eigenvalues: (n_lags, d) eigenvalues sorted descending.
+        eigenvalues: (n_lags, d) eigenvalues sorted descending (lag 0 first).
         phys_times: (n_lags,) physical times.
         sigma_f_sq: scalar diffusion coefficient.
         gamma: aspect ratio d/N.
-        k: number of DA directions to protect (default 2).
+        m: number of DA directions that must all pass.
+        C_tau_all, Z_all: if both are given, condition (ii) (dip test at
+            Bonferroni level alpha/m) is applied; otherwise only (i) and (iii).
+        alpha: family-wise level for condition (ii).
 
     Returns:
-        tau_star_idx: index into phys_times.
-        tau_star: physical time.
+        tau_star_idx, tau_star; (None, None) if no lag satisfies the conditions.
     """
     sigma = np.sqrt(sigma_f_sq)
-    n_lags = len(phys_times)
-
-    # Find last lag where λ_k > λ₊(τ)
-    tau_star_idx = 0
-    for i in range(n_lags):
+    traces = eigenvalues.sum(axis=1)
+    rho = traces / traces[0]
+    for i in range(len(phys_times) - 1, 0, -1):
         _, lp = edges(phys_times[i], sigma, gamma=gamma)
-        if eigenvalues[i, k - 1] > lp:
-            tau_star_idx = i
+        if not (np.all(eigenvalues[i, :m] > lp) and rho[i] < 1.0 / np.e):
+            continue
+        if C_tau_all is not None and Z_all is not None:
+            if np.any(dip_pvalues(Z_all, C_tau_all[i], m) > alpha / m):
+                continue
+        return i, float(phys_times[i])
+    return None, None
 
-    return tau_star_idx, float(phys_times[tau_star_idx])
+
+def n_metastable(C_tau_path, m_max=10, alpha=0.05):
+    """Largest m for which τ*(m) exists, with that τ*(m)."""
+    data = np.load(C_tau_path)
+    Z_all = data['Z_all'] if 'Z_all' in data else None
+    best = (0, None, None)
+    for m in range(1, m_max + 1):
+        idx, tau = select_tau_star(data['eigenvalues'], data['phys_times'],
+                                   float(data['sigma_f_sq']), float(data['gamma']),
+                                   m=m, C_tau_all=data['C_tau_all'], Z_all=Z_all,
+                                   alpha=alpha)
+        if idx is None:
+            break
+        best = (m, idx, tau)
+    return {'m_hat': best[0], 'tau_star_idx': best[1], 'tau_star': best[2]}
 
 
-def compute_da(C_tau_path, tau_idx=None, n_directions=6):
+def compute_da(C_tau_path, tau_idx=None, m=1, n_directions=6):
     """Compute DA directions from saved autocovariance.
 
     Args:
         C_tau_path: path to NPZ from save_lags.py.
-        tau_idx: lag index to use. If None, auto-selects via free-conv criterion.
+        tau_idx: lag index to use. If None, τ*(m) from select_tau_star.
+        m: number of directions the auto-selected lag must support.
         n_directions: number of eigenvectors to return.
 
     Returns:
@@ -73,8 +110,11 @@ def compute_da(C_tau_path, tau_idx=None, n_directions=6):
 
     # Select lag
     if tau_idx is None:
-        tau_idx, tau_star = select_tau_star(eigenvalues, phys_times,
-                                            sigma_f_sq, gamma, k=2)
+        tau_idx, tau_star = select_tau_star(
+            eigenvalues, phys_times, sigma_f_sq, gamma, m=m, C_tau_all=C_tau_all,
+            Z_all=data['Z_all'] if 'Z_all' in data else None)
+        if tau_idx is None:
+            raise ValueError(f"no lag satisfies the selection criterion for m={m}")
     else:
         tau_star = float(phys_times[tau_idx])
 
@@ -108,68 +148,51 @@ def compute_da(C_tau_path, tau_idx=None, n_directions=6):
     }
 
 
-def da_significance(C_tau_path, B=500, tau_idx=None, seed=42):
-    """Monte Carlo null test for DA spike significance.
+def da_significance(C_tau_path, B=100, tau_idx=None, m=1, alpha=0.05, seed=42):
+    """Matched-covariance Gaussian Monte Carlo null (Algorithm 2).
 
-    Generates B null replicates by permuting the time axis of each trajectory,
-    destroying temporal correlation while preserving marginal distribution.
-    Computes top eigenvalue of C_sym(τ*) under null and compares with observed.
-
-    Args:
-        C_tau_path: path to NPZ.
-        B: number of null replicates.
-        tau_idx: lag index (auto-selected if None).
-        seed: RNG seed.
+    Each replicate draws N samples from N(0, Σ̂), with Σ̂ = Ĉ(0) the sample
+    covariance, runs the canonical diffusion with the exact linear score
+    -Σ̂⁻¹x (same N, Δt, T and σ_f² = tr Σ̂/d), and eigendecomposes C_sym(τ*).
+    Observed λ_i is compared with the null distribution of the i-th eigenvalue;
+    direction i passes if p_i ≤ alpha/m (Bonferroni over the top m).
 
     Returns:
-        dict with keys: observed_evals, null_max_evals, p_values, tau_star.
+        dict with keys: observed_evals, null_evals (B, n), p_values, passed, tau_star.
     """
+    from cli.save_lags import compute_symmetrized_autocovariance
+
     data = np.load(C_tau_path)
-    sigma_f_sq = float(data['sigma_f_sq'])
-    gamma = float(data['gamma'])
+    result = compute_da(C_tau_path, tau_idx=tau_idx, m=m)
+    observed = result['eigenvalues']
+    n = len(observed)
+    dt = float(data['dt'])
+    N, d, T = int(data['N']), int(data['d']), int(data['T_steps'])
+    lag = int(np.rint(result['tau_star'] / dt))
 
-    # Get observed DA
-    result = compute_da(C_tau_path, tau_idx=tau_idx)
-    observed_evals = result['eigenvalues']
-    tau_idx_used = result['tau_star_idx']
-
-    if 'Z_all' not in data:
-        raise ValueError("NPZ must contain 'Z_all' (per-trajectory data) "
-                         "for significance testing")
-
-    Z_all = data['Z_all']   # (N, T+1, d)
-    N, T_plus_1, d = Z_all.shape
-    lags = (data['phys_times'] / float(data['dt'])).astype(int)
-    lag = lags[tau_idx_used]
-
+    Sigma = data['C_tau_all'][0]
+    sigma_f_sq = np.trace(Sigma) / d
+    L = np.linalg.cholesky(Sigma + 1e-12 * np.trace(Sigma) / d * np.eye(d))
+    P = np.linalg.inv(Sigma)
     rng = np.random.RandomState(seed)
-    null_max_evals = np.zeros(B)
-
+    null = np.zeros((B, n))
     for b in range(B):
-        # Permute time axis independently per trajectory
-        Z_perm = Z_all.copy()
-        for n in range(N):
-            perm = rng.permutation(T_plus_1)
-            Z_perm[n] = Z_perm[n, perm]
+        Z = np.empty((N, T + 1, d))
+        Z[:, 0] = rng.randn(N, d) @ L.T
+        for t in range(T):
+            X = Z[:, t]
+            Z[:, t + 1] = (X - 0.5 * sigma_f_sq * dt * X @ P
+                           + np.sqrt(sigma_f_sq * dt) * rng.randn(N, d))
+        Z -= Z.mean(axis=(0, 1))
+        C = compute_symmetrized_autocovariance(Z, [lag])[0]
+        null[b] = np.sort(np.linalg.eigvalsh(C))[::-1][:n]
 
-        # Compute C_sym(τ*) under null
-        Z_t = Z_perm[:, :T_plus_1 - lag, :]
-        Z_th = Z_perm[:, lag:, :]
-        Z_t_flat = Z_t.reshape(-1, d)
-        Z_th_flat = Z_th.reshape(-1, d)
-        C = Z_t_flat.T @ Z_th_flat / Z_t_flat.shape[0]
-        C_sym = (C + C.T) / 2
-        null_max_evals[b] = np.linalg.eigvalsh(C_sym)[-1]
-
-    # p-values for each observed eigenvalue
-    p_values = np.array([
-        (null_max_evals >= ev).mean() for ev in observed_evals
-    ])
-
+    p_values = (1 + (null >= observed).sum(axis=0)) / (B + 1)
     return {
-        'observed_evals': observed_evals,
-        'null_max_evals': null_max_evals,
+        'observed_evals': observed,
+        'null_evals': null,
         'p_values': p_values,
+        'passed': p_values[:m] <= alpha / m,
         'tau_star': result['tau_star'],
     }
 
@@ -179,8 +202,12 @@ if __name__ == '__main__':
         print('Usage: python -m cli.compute_da <C_tau.npz> [--significance B]')
         sys.exit(1)
     path = sys.argv[1]
-    result = compute_da(path)
-    print(f"DA at τ* = {result['tau_star']:.1f}")
+    nm = n_metastable(path)
+    print(f"m̂ = {nm['m_hat']} metastable direction(s)")
+    if nm['m_hat'] == 0:
+        sys.exit(0)
+    result = compute_da(path, tau_idx=nm['tau_star_idx'])
+    print(f"DA at τ* = {result['tau_star']:.3f}")
     print(f"  λ₁ = {result['eigenvalues'][0]:.4e}  "
           f"(gap = {result['gap_ratio']:.1f}× floor)")
     if len(result['eigenvalues']) > 1:
@@ -189,8 +216,8 @@ if __name__ == '__main__':
 
     if '--significance' in sys.argv:
         idx = sys.argv.index('--significance')
-        B = int(sys.argv[idx + 1]) if idx + 1 < len(sys.argv) else 500
-        sig = da_significance(path, B=B)
-        print(f"\nMC null (B={B}):")
+        B = int(sys.argv[idx + 1]) if idx + 1 < len(sys.argv) else 100
+        sig = da_significance(path, B=B, tau_idx=nm['tau_star_idx'], m=nm['m_hat'])
+        print(f"\nMatched-Gaussian MC null (B={B}, Bonferroni over m̂={nm['m_hat']}):")
         for i, (ev, p) in enumerate(zip(sig['observed_evals'], sig['p_values'])):
             print(f"  DA{i+1}: λ={ev:.4e}, p={p:.4f}")
