@@ -47,3 +47,32 @@ docs/
 # Track small JSON/CSV result files
 !experiments/*/results/*.json
 !experiments/*/results/*.csv
+
+# Local paper source snapshot (not tracked)
+MultimodalityMeasure-25.tex
+CAMERA_READY_TODO.md
+CAMERA_READY_CHANGELOG.md
+
+# Rebuttal experiments: kept local until the camera-ready paper is final.
+# Then decide which ones the paper cites and un-ignore those (see CAMERA_READY_TODO.md).
+experiments/noise_floor/
+experiments/pne/
+experiments/rebuttal_figures/
+experiments/sdxl/p4_evidence/
+experiments/sdxl/p4_extract_sdxl_evidence.py
+experiments/sdxl/rebuttal_lag_sensitivity/
+experiments/sdxl/results/gen_person_gs*_entropy.json
+experiments/synthetic/audit_p2_dispersion_baseline.py
+experiments/synthetic/cluster/run_p2_*.sh
+experiments/synthetic/cluster/run_p3*.sh
+experiments/synthetic/cluster/run_p11_*.sh
+experiments/synthetic/compute_p2_*.py
+experiments/synthetic/p11_unimodal_high_ssa.py
+experiments/synthetic/p3_rebuild_table.py
+experiments/synthetic/p3_scope_controls.py
+experiments/synthetic/p3b_*.py
+experiments/synthetic/results/p11_unimodal/
+experiments/synthetic/results/p2_*
+experiments/synthetic/results/p3_scope/
+experiments/synthetic/results/p3b_rings/
+texput.log
