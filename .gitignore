@@ -83,3 +83,8 @@ experiments/synthetic/results/p2_*
 experiments/synthetic/results/p3_scope/
 experiments/synthetic/results/p3b_rings/
 texput.log
+
+# README figures
+!assets/
+!assets/*.png
+!assets/*.jpg

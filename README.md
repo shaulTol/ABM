@@ -1,11 +1,296 @@
-# Measuring and Decomposing Mode Separation via the Canonical Diffusion
+<h1 align="center">Measuring and Decomposing Mode Separation<br>via the Canonical Diffusion</h1>
 
-Code repository for the paper. Implements **SSA** (Sum of Squared
-Autocorrelations), a scalar multimodality measure, and **DA** (Dominant
-Autocorrelation) directions, a directional decomposition ordered by
-metastability.
+<p align="center">
+  <b>Shaul Tolkowsky</b> · <b>Ori Meidler</b> · <b>Or Zuk</b><br>
+  Hebrew University of Jerusalem · NeurIPS 2026
+</p>
 
-## Algorithm Overview
+<p align="center">
+  <a href="https://arxiv.org/abs/2605.08777"><img src="https://img.shields.io/badge/arXiv-2605.08777-b31b1b.svg" alt="arXiv"></a>
+  <img src="https://img.shields.io/badge/NeurIPS-2026-0F6E8C.svg" alt="NeurIPS 2026">
+  <img src="https://img.shields.io/badge/python-3.12-3776AB.svg" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/package-coming%20soon-lightgrey.svg" alt="Package: coming soon">
+</p>
+
+<p align="center">
+  <a href="https://arxiv.org/abs/2605.08777">Paper</a> ·
+  <a href="#use-it-on-your-own-data">Use it on your data</a> ·
+  <a href="#citation">Citation</a> ·
+  <a href="#reproducing-the-paper">Reproduce the experiments</a>
+</p>
+
+<!-- TODO: replace with the canonical-diffusion animation (density → particles under
+     the canonical diffusion → decaying autocorrelation → SSA and DA). A GIF in assets/
+     works; an MP4 can be dropped into GitHub's web editor, which turns it into a
+     user-attachments link that plays inline. -->
+<p align="center">
+  <img src="assets/animation_placeholder.png" width="100%" alt="Animation placeholder: from a density to its canonical diffusion">
+</p>
+
+> **From samples and a score alone, SSA measures how strongly a distribution splits
+> into modes, and DA finds the directions that split it.**
+
+How sharply a density fragments into barrier-separated modes is a different property
+from how widely it spreads, and the standard label-free tools only see spread: entropy
+grows with dispersion, and PCA ranks directions by variance. We attach to every density
+a unique reversible diffusion, the *canonical diffusion*, and read two quantities off
+its autocovariance: **SSA**, a single number that grows with barrier height, and **DA**,
+linear directions ordered by metastability rather than variance. Both need only samples
+and a score function, so they run on pretrained diffusion models through Tweedie's
+identity. We test them on Gaussian mixtures, SDXL generations and molecular dynamics of
+alanine dipeptide.
+
+<details>
+<summary><b>Full abstract</b></summary>
+<br>
+
+Mode separation, namely how sharply a distribution fragments into barrier-separated
+clusters, is a fundamental geometric property of densities, difficult to quantify in
+high dimensions. Modes are often the meaningful alternatives in the data, such as the
+conformations of a molecule or the distinct semantic types among a generative model's
+outputs. Mode separation is distinct from dispersion, which is what standard label-free
+tools capture: differential entropy rises with spread regardless of fragmentation, and
+PCA orders directions by variance regardless of barriers. Mutual information does
+capture it, but only given the latent component labels, which are usually unavailable.
+We measure mode separation through a single stochastic process intrinsic to the density,
+namely the unique reversible diffusion with $f$ as its stationary distribution and a
+constant scalar diffusion coefficient. From its autocovariance matrix we extract two
+readouts. The first, SSA (Sum of Squared Autocorrelations), is a scalar barrier-sensitive
+measure. The second, DA (Dominant Autocorrelation directions), gives linear projections
+ordered by metastability rather than variance. Under an isotropic-Gaussian null, we
+derive the limiting spectrum of the empirical autocovariance in closed form, generalizing
+the Marchenko–Pastur law. Its upper edge gives a noise floor that separates metastable
+directions from sampling noise. Both readouts use only samples and a score function,
+scaling to high dimensions through pretrained score-based generative models via
+Tweedie's identity. We apply our framework to three settings: (i) synthetic Gaussian
+mixtures, where SSA tracks mutual information; (ii) SDXL text-to-image generations,
+where SSA and DA capture structure that entropy and PCA miss; and (iii) molecular
+dynamics of alanine dipeptide, where DA recovers the known slow backbone dihedrals from
+static samples alone.
+
+</details>
+
+## Separation, not spread
+
+<p align="center">
+  <img src="assets/dispersion_vs_separation.png" width="85%" alt="Isotropic Gaussian vs. two parallel ellipses, with DA1 and PC1 arrows">
+</p>
+
+An isotropic Gaussian (left) and two parallel elongated modes (right). **Entropy** ranks
+the blob higher ($H$ = 6.06 vs. 5.14 nats), because it is more spread out. **SSA** ranks
+the two modes higher (1.82 vs. 1.02), because a diffusion has to cross a barrier to move
+between them. On the right, **DA1** (blue) points across the barrier, while **PC1** (red)
+follows the larger within-mode variance. Projected onto DA1, the data are clearly bimodal
+(dip test $p < 10^{-3}$); projected onto PC1, they are not ($p = 0.99$). On the blob,
+neither method has a preferred direction, so both arrows are noise.
+
+## One prompt, two cranes
+
+<p align="center">
+  <img src="assets/crane_da1.jpg" width="100%" alt="SDXL 'a photo of a crane': top-5 and bottom-5 images along DA1">
+</p>
+
+The same effect in a real generative model. SDXL's outputs for *"a photo of a crane"*
+($w = 7.5$) have the highest SSA of all prompts we tested ($\hat S = 1.54$), because the
+model produces both senses of the word. Sorting the samples along DA1 puts every bird at
+one end and every construction crane at the other.
+
+## The problem
+
+- **Question:** how sharply does a distribution split into **modes**, clusters separated
+  by low-density barriers?
+- **Why it matters:** modes are the meaningful alternatives in data, such as a
+  molecule's conformations or the distinct types among a generative model's outputs.
+- **Why it is hard:** separation is difficult to measure in high dimensions, and mode
+  labels are usually unavailable.
+- **The gap:** existing label-free tools see spread, not separation.
+
+| Tool | Needs mode labels? | What it measures |
+|---|:---:|---|
+| Differential entropy | no | spread |
+| PCA | no | directions of largest variance |
+| Mutual information $I(X;Z)$ | **yes** | separation |
+| Hartigan's dip test | no | separation, in 1D only |
+| **SSA / DA (this work)** | **no** | **separation, in any dimension, from samples + a score** |
+
+## The method
+
+**The canonical diffusion.** For a density $f$, take the reversible diffusion with
+stationary density $f$ and constant scalar noise $\sigma_f^2 = \mathrm{tr}\,\mathrm{Cov}_f(X)/d$.
+It is unique, and it only needs the score $\nabla \log f$:
+
+```math
+dX_t \;=\; \tfrac12\,\sigma_f^2\,\nabla\log f(X_t)\,dt \;+\; \sigma_f\,dW_t
+```
+
+**Its autocovariance.** $C(\tau)$ measures how much the centered process
+$Y_t = X_t - \mathbb{E}_f[X]$ still remembers where it was a time $\tau$ ago. Each slow
+mode $k$ (direction $\alpha_k$) fades at rate $\mu_k$, and barriers make $\mu_k$ small:
+
+```math
+C(\tau) \;=\; \mathbb{E}_f\!\left[Y_\tau Y_0^{\top}\right] \;=\; \sum_{k\ge 2} e^{-\mu_k \tau}\,\alpha_k\alpha_k^{\top}
+```
+
+**SSA** integrates the squared trace-normalized autocorrelation
+$\rho(\tau) = \mathrm{tr}\,C(\tau)/\mathrm{tr}\,C(0)$, where $w_k$ is the share of variance
+carried by mode $k$. It equals 1 for a unimodal isotropic Gaussian and grows without
+bound as barriers deepen:
+
+```math
+S(f) \;=\; \int_0^\infty \rho(\tau)^2\,d\tau \;=\; \sum_{k,\ell\ge 2} \frac{w_k\,w_\ell}{\mu_k+\mu_\ell}
+```
+
+**DA** is the eigendecomposition of $C(\tau)$ at a long lag. Fast modes have decayed by
+then, so the leading eigenvector aligns with the slowest mode $\alpha_2$, with error
+$O\big(e^{-2(\mu_3-\mu_2)\tau}\big)$, regardless of how much variance it carries.
+
+**But we only see $\hat C(\tau)$.** With finitely many trajectories, part of the
+spectrum of the estimated autocovariance is noise. For pure noise, an isotropic Gaussian
+with $\gamma = d/N$, we derive its limit spectrum in closed form (a free additive
+convolution of two Marchenko–Pastur laws). The upper edge $\lambda_+(\tau)$ is the noise
+floor: directions above it are slow, directions below it are sampling noise.
+
+<p align="center">
+  <img src="assets/noise_floor.png" width="100%" alt="Empirical eigenvalues vs. the analytic free-convolution density at four lags">
+</p>
+
+*Eigenvalues of $\hat C(\tau)$ under the isotropic Gaussian null at $\tau = 0, 0.5, 2, 10$
+(histogram) against the analytic density (red). Green: the edge $\lambda_+(\tau)$; orange:
+its $\tau\to\infty$ limit. At $\tau = 0$ this is the Marchenko–Pastur law, with
+$\lambda_+(0) = \sigma^2(1+\sqrt\gamma)^2$.*
+
+## Results
+
+### SSA tracks mutual information, without the labels
+
+<p align="center">
+  <img src="assets/gmm_sweeps.png" width="80%" alt="SSA and mutual information across four Gaussian-mixture sweeps">
+</p>
+
+On 10-dimensional Gaussian mixtures, SSA (blue) and mutual information with the true
+component labels (red) agree across sweeps in (a) mode separation, (b) within-mode
+variance, (c) weight imbalance and (d) number of modes. Mutual information saturates at
+$\log k$ while SSA keeps growing with barrier height. Over 50 random mixtures, their
+Spearman rank correlation is 0.89.
+
+### SSA peaks at intermediate guidance
+
+<p align="center">
+  <img src="assets/ssa_vs_guidance.png" width="70%" alt="SSA vs. guidance scale for 10 SDXL prompts">
+</p>
+
+SSA of SDXL's outputs for 10 prompts at four classifier-free guidance scales $w$. Every
+prompt peaks at $w = 3$ or $w = 7.5$ (shaded), never at the extremes. The dashed line is
+the unimodal baseline $S = 1$. Low guidance gives diverse but weakly on-prompt images;
+high guidance collapses onto a few repeated types; in between, the model produces several
+distinct, coherent types.
+
+### DA finds what PCA mixes
+
+<p align="center">
+  <img src="assets/sdxl_person_elderly.jpg" width="100%" alt="SDXL person prompt across guidance scales; elderly prompt sorted by DA1 and PC1">
+</p>
+
+**Left:** *"a professional photograph of a person"* at $w = 1, 3, 7.5, 15$.
+**Right:** *"a portrait of an elderly person"* ($w = 7.5$), with the images at each end
+of DA1 and of PC1. DA1 separates the samples by gender (Spearman $|\rho| = 0.90$); PC1
+mixes gender with realism and style.
+
+<p align="center">
+  <img src="assets/alanine_da_tica_pc1.png" width="100%" alt="Ramachandran plots of alanine dipeptide colored by DA1, TICA1 and PC1">
+</p>
+
+**Alanine dipeptide**, featurized as 45 pairwise distances. TICA needs the MD trajectory;
+DA uses only static samples and a KDE score. Both find the backbone dihedral $\psi$ as
+the slowest coordinate: DA1 tracks $\psi$ ($|r| = 0.67$) and DA2 tracks $\phi$ (0.87),
+the same order as TICA, while PC1 mixes the two (0.56 and 0.60).
+
+## Main contributions
+
+- **Canonical diffusion:** a unique reversible diffusion for any density, needing only
+  its score and first two moments.
+- **Scales to pretrained models:** any denoiser supplies the score via Tweedie's identity
+  (SDXL latent space, $d = 65{,}536$).
+- **SSA:** a label-free measure of mode separation that ranks mixtures like mutual
+  information, without the labels.
+- **DA:** linear directions ordered by metastability rather than variance.
+- **Noise floor:** the limit spectrum of the lagged autocovariance in closed form,
+  generalizing Marchenko–Pastur.
+
+## Use it on your own data
+
+> A pip-installable package with a direct `ssa(...)` / `da(...)` interface is planned.
+> Until then, the pipeline lives in [`src/pipeline/`](src/pipeline).
+
+```bash
+git clone https://github.com/shaulTol/ABM.git && cd ABM
+pip install -r requirements.txt
+```
+
+You need samples from $f$ and its score $\nabla\log f$: analytic, a KDE
+([`src/kde/kde_score.py`](src/kde/kde_score.py)), or a pretrained diffusion model
+through Tweedie's identity. A two-mode toy example:
+
+```python
+import numpy as np
+import torch
+from src.pipeline import save_lags, compute_ssa, compute_da, n_metastable
+
+# Toy target: two Gaussian modes at (±2, 0) with variance 0.5
+mus, var = torch.tensor([[2.0, 0.0], [-2.0, 0.0]], dtype=torch.float64), 0.5
+
+def score(x):                       # ∇ log f(x), x: (N, d) tensor
+    diff = x[:, None, :] - mus[None]                    # (N, k, d)
+    w = torch.softmax(-(diff ** 2).sum(-1) / (2 * var), dim=1)
+    return -(w[..., None] * diff).sum(1) / var
+
+rng = np.random.default_rng(0)
+X0 = rng.normal(scale=var ** 0.5, size=(500, 2))     # samples from f
+X0[:, 0] += rng.choice([-2.0, 2.0], size=500)
+sigma_f_sq = np.trace(np.cov(X0.T)) / X0.shape[1]    # σ_f² = tr Cov / d
+
+# 1. Simulate the canonical diffusion and save C(τ) on a lag grid (lag 0 first)
+save_lags(score, X0, sigma_f_sq, dt=0.01, T_steps=10_000,
+          lags=range(0, 10_001, 20), out_path='toy.npz', save_trajectories=True)
+
+# 2. SSA (≈ 6 here; a single Gaussian gives ≈ 1)
+print('SSA =', compute_ssa('toy.npz')['s_hat'])
+
+# 3. DA: number of metastable directions, then the directions themselves
+m = n_metastable('toy.npz')
+if m['m_hat']:
+    da = compute_da('toy.npz', tau_idx=m['tau_star_idx'], m=m['m_hat'])
+    print('DA1 =', da['eigenvectors'][:, 0])          # ≈ ±(1, 0): across the barrier
+```
+
+The same steps from the shell, once the NPZ exists:
+
+```bash
+python -m cli.compute_ssa toy.npz --bootstrap 2000   # SSA with a trajectory-bootstrap SE
+python -m cli.compute_da toy.npz --significance 100  # DA with the matched Monte Carlo null
+```
+
+## Citation
+
+```bibtex
+@inproceedings{tolkowsky2026modeseparation,
+  title     = {Measuring and Decomposing Mode Separation via the Canonical Diffusion},
+  author    = {Tolkowsky, Shaul and Meidler, Ori and Zuk, Or},
+  booktitle = {Advances in Neural Information Processing Systems},
+  year      = {2026},
+  eprint    = {2605.08777},
+  archivePrefix = {arXiv}
+}
+```
+
+---
+
+## Reproducing the paper
+
+Everything below is the repository guide: how the code maps to the paper, how to set up
+the environment and cluster, and how to rerun each experiment and regenerate each figure.
+
+### Algorithm Overview
 
 Given samples from an unknown density f, the method works in three stages:
 
@@ -33,7 +318,7 @@ projection onto each of v₁…v_m rejects unimodality (dip test), and
 τ\*(m). The eigenvectors of C_sym(τ\*) are the DA directions, ordered by
 metastability.
 
-### Code ↔ Paper Mapping
+#### Code ↔ Paper Mapping
 
 | Paper | Code | Description |
 |-------|------|-------------|
@@ -46,7 +331,7 @@ metastability.
 | KDE score estimator | `src/kde/kde_score.py` | ∇log f̂ for tabular data |
 | DDPM score (SDXL) | `experiments/sdxl/sdxl_components.py` | Tweedie denoiser as score oracle |
 
-## Setup
+### Setup
 
 ```bash
 pip install -r requirements.txt
@@ -54,7 +339,7 @@ pip install -r requirements.txt
 # Additional: pip install latent_clip open_clip_torch==3.3.0 diffusers==0.30.0
 ```
 
-### Cluster Configuration
+#### Cluster Configuration
 
 SLURM scripts use placeholders. Replace them before running:
 
@@ -71,7 +356,7 @@ SLURM scripts use placeholders. Replace them before running:
 | `<TORCH_LIB>` | PyTorch shared libraries | `<CONDA_ENV>/lib/python3.12/site-packages/torch/lib` |
 | `<HF_CACHE>` | Hugging Face model cache | `~/.cache/huggingface` |
 
-## Repository Structure
+### Repository Structure
 
 ```
 src/                    Core library
@@ -84,9 +369,9 @@ src/                    Core library
   plotting/             Shared figure styling
 cli/                    Command-line wrappers around src/pipeline
 experiments/
-  synthetic/            Section 7.1: GMM sweeps, planted spikes, ellipses, noise floor
-  sdxl/                 Section 7.2: SDXL guidance sweep, elderly DA, crane
-  alanine/              Section 7.3: alanine dipeptide KDE-DA, baselines, MC null
+  synthetic/            synthetic validation: GMM sweeps, planted spikes, ellipses, noise floor
+  sdxl/                 SDXL: SDXL guidance sweep, elderly DA, crane
+  alanine/              molecular: alanine dipeptide KDE-DA, baselines, MC null
   robustness/           Appendix "Additional Robustness and Scope Controls"
     score_error/        Sensitivity to score-estimation error
     numerics/           Numerical parameters (N, Δt, lag window; Gaussian vs ellipses)
@@ -98,14 +383,14 @@ experiments/
 
 ---
 
-## Running the Experiments
+### Running the Experiments
 
 Each experiment follows the same pattern: a **producer** script runs the
 Langevin simulation and saves results, then a **figure** script reads those
 results and generates plots. Producer scripts are submitted as SLURM jobs;
 figure scripts run locally in seconds.
 
-### Synthetic GMMs (Section 7.1)
+#### Synthetic GMMs ("Validation on synthetic distributions")
 
 **GMM parameter sweeps** (Fig 1a-d) — SSA vs separation, variance, weight, mode count:
 ```bash
@@ -147,7 +432,7 @@ sbatch experiments/synthetic/cluster/run_ellipses_null.sh
 # Output: experiments/synthetic/results/ellipses_null_results.npz
 ```
 
-### SDXL Guidance Sweep (Section 7.2)
+#### SDXL Guidance Sweep ("SSA and DA on SDXL generations in CLIP space")
 
 **SSA across 14 prompts x 4 guidance scales** (Fig 3, Table 1):
 ```bash
@@ -188,7 +473,7 @@ sbatch experiments/sdxl/cluster/run_decode_crane.sh
 sbatch experiments/sdxl/cluster/run_decode_grids.sh
 ```
 
-### Alanine Dipeptide (Section 7.3)
+#### Alanine Dipeptide ("Molecular conformational landscapes")
 
 Requires raw MD trajectories in `experiments/alanine/alanine_dipeptide/data/`
 (~135 MB, download from [MDshare](http://ftp.imp.fu-berlin.de/pub/cmb-data/)).
@@ -218,7 +503,7 @@ cd experiments/alanine
 python fig_tica_its.py  # Fig A14: TICA implied timescales
 ```
 
-### Robustness and Scope Controls (Appendix "Additional Robustness and Scope Controls")
+#### Robustness and Scope Controls (Appendix "Additional Robustness and Scope Controls")
 
 Code in `experiments/robustness/`, one folder per subsection. SSA values use the
 paper's 1/N first-crossing stopping rule; result files tagged `_fc` (first
@@ -265,14 +550,14 @@ python fig_da_subspace.py && python fig_rings.py
 
 ---
 
-## Reproducing Figures from Pre-computed Results
+### Reproducing Figures from Pre-computed Results
 
 All small result files (JSON/CSV, ~1.5 MB total) are tracked in git.
 Binary NPZ files are gitignored — sync from cluster or regenerate via SLURM.
 
 Once results are in place, figures regenerate locally in seconds (CPU-only):
 
-### Main Text
+#### Main Text
 
 | Figure | Command |
 |--------|---------|
@@ -283,7 +568,7 @@ Once results are in place, figures regenerate locally in seconds (CPU-only):
 | Fig 4 (elderly DA grid) | `cd experiments/sdxl && python fig_elderly_da.py --mode grid` |
 | Fig 5 (alanine DA vs TICA) | `cd experiments/alanine && python fig_alanine_da_tica.py` |
 
-### Appendix
+#### Appendix
 
 | Figure | Command |
 |--------|---------|
@@ -300,7 +585,7 @@ Once results are in place, figures regenerate locally in seconds (CPU-only):
 | Fig A15 (planted spikes) | `cd experiments/synthetic && python fig_planted_spikes.py --npz results/fig_planted_spikes.npz` |
 | $A_0 = \sigma^2 I$ figure | `cd experiments/synthetic && python fig_a0_identity.py` |
 
-### Robustness appendix
+#### Robustness appendix
 
 | Figure | Command |
 |--------|---------|
@@ -312,7 +597,7 @@ Once results are in place, figures regenerate locally in seconds (CPU-only):
 
 Outputs go to `experiments/robustness/figures/`.
 
-### Tables
+#### Tables
 
 | Table | Command |
 |-------|---------|
@@ -323,7 +608,7 @@ Outputs go to `experiments/robustness/figures/`.
 
 ---
 
-## Syncing Results from Cluster
+### Syncing Results from Cluster
 
 For binary NPZ files:
 
@@ -347,7 +632,7 @@ rsync -avz -e 'ssh -p 2222' \
 
 ---
 
-## Compute Requirements
+### Compute Requirements
 
 All experiments run on single-GPU SLURM jobs. No multi-GPU or distributed
 training is required.
