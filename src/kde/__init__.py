@@ -1,14 +1,10 @@
 """
-KDE-based Autocorrelation Score Module
+KDE Score Module
 
-Provides functionality to compute the autocorrelation-based multimodality score
-directly from raw samples using Kernel Density Estimation.
-
-The main entry point is `autocorrelation_score()`.
+Provides a Gaussian-KDE score oracle ∇log f̂ for running the canonical
+diffusion directly on raw samples.
 """
 
-from .kde_estimator import KernelDensityEstimate
 from .kde_score import KDEScore
 
-__all__ = ['KernelDensityEstimate', 'KDEScore']
-
+__all__ = ['KDEScore']

@@ -75,6 +75,7 @@ SLURM scripts use placeholders. Replace them before running:
 
 ```
 src/                    Core library
+  core/                 Gaussian-mixture definitions, device/GPU helpers
   metrics/              SSA, DA, autocorrelation
   simulation/           Langevin integrator
   kde/                  KDE score estimator
