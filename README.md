@@ -9,13 +9,13 @@ metastability.
 
 Given samples from an unknown density f, the method works in three stages:
 
-**Stage 1 — Canonical diffusion** (Algorithm 1, `cli/save_lags.py`).
+**Stage 1 — Canonical diffusion** (Algorithm 1, `src/pipeline/save_lags.py`).
 Run the isotropic Langevin SDE:  *dX = (σ²_f / 2) ∇log f(X) dt + σ_f dW*,
 where σ²_f = tr(Cov(X)) / d. Collect N trajectories, each of length T.
 Compute the symmetrized autocovariance C_sym(τ) = (C(τ) + C(τ)ᵀ) / 2
 at a grid of lags.
 
-**Stage 2a — SSA** (`cli/compute_ssa.py`).
+**Stage 2a — SSA** (`src/pipeline/compute_ssa.py`).
 At each lag compute the trace-normalized autocorrelation
 ρ̂(τ) = tr Ĉ(τ) / tr Ĉ(0), with Ĉ(τ) the trajectory-averaged lag-τ
 autocovariance centered at the pooled sample mean.
@@ -24,7 +24,7 @@ Truncate at the first lag where ρ̂(τ)² ≤ 1/N (that lag included). Sum:
 A unimodal isotropic Gaussian gives Ŝ ≈ 1; Ŝ grows with barrier height.
 Standard errors come from a trajectory bootstrap.
 
-**Stage 2b — DA directions** (`cli/compute_da.py`).
+**Stage 2b — DA directions** (`src/pipeline/compute_da.py`).
 τ\*(m) is the largest lag at which (i) the top m eigenvalues of C_sym(τ) exceed
 the null threshold (the analytic free-convolution edge λ₊(τ), or the matched
 Gaussian Monte Carlo null with Bonferroni over the m directions), (ii) the 1D
@@ -37,10 +37,10 @@ metastability.
 
 | Paper | Code | Description |
 |-------|------|-------------|
-| Algorithm 1 (`alg:ssa_da`) | `cli/save_lags.py` | Langevin simulation + C_sym(τ) computation |
-| SSA estimator + 1/N stopping rule (`eq:ssa_estimator`, `eq:tmax_stopping`) | `cli/compute_ssa.py` | Riemann sum truncated at the first 1/N crossing; trajectory bootstrap |
-| DA lag-selection criterion (Section "DA") | `cli/compute_da.py` | τ\*(m), m̂, eigenvectors of C_sym(τ\*) |
-| Algorithm 2 (`alg:operational_floor`) | `cli/compute_da.py` (`da_significance`) | Matched-Gaussian Monte Carlo null |
+| Algorithm 1 (`alg:ssa_da`) | `src/pipeline/save_lags.py` | Langevin simulation + C_sym(τ) computation |
+| SSA estimator + 1/N stopping rule (`eq:ssa_estimator`, `eq:tmax_stopping`) | `src/pipeline/compute_ssa.py` | Riemann sum truncated at the first 1/N crossing; trajectory bootstrap |
+| DA lag-selection criterion (Section "DA") | `src/pipeline/compute_da.py` | τ\*(m), m̂, eigenvectors of C_sym(τ\*) |
+| Algorithm 2 (`alg:operational_floor`) | `src/pipeline/compute_da.py` (`da_significance`) | Matched-Gaussian Monte Carlo null |
 | Theorem 2 (`thm:limit-spectrum`) | `src/noise_floor/free_conv_utils.py` | Free-convolution upper edge λ₊(τ) |
 | Langevin integrator | `src/simulation/langevin.py` | Euler-Maruyama SDE solver |
 | KDE score estimator | `src/kde/kde_score.py` | ∇log f̂ for tabular data |
@@ -80,8 +80,9 @@ src/                    Core library
   simulation/           Langevin integrator
   kde/                  KDE score estimator
   noise_floor/          Free-convolution density and noise floor
+  pipeline/             Algorithm 1 end to end: save_lags → compute_ssa / compute_da
   plotting/             Shared figure styling
-cli/                    Shared pipeline (Algorithm 1 → SSA / DA)
+cli/                    Command-line wrappers around src/pipeline
 experiments/
   synthetic/            Section 7.1: GMM sweeps, planted spikes, ellipses, noise floor
   sdxl/                 Section 7.2: SDXL guidance sweep, elderly DA, crane
