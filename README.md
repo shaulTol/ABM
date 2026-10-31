@@ -19,12 +19,8 @@
   <a href="#reproducing-the-paper">Reproduce the experiments</a>
 </p>
 
-<!-- TODO: replace with the canonical-diffusion animation (density → particles under
-     the canonical diffusion → decaying autocorrelation → SSA and DA). A GIF in assets/
-     works; an MP4 can be dropped into GitHub's web editor, which turns it into a
-     user-attachments link that plays inline. -->
 <p align="center">
-  <img src="assets/animation_placeholder.png" width="100%" alt="Animation placeholder: from a density to its canonical diffusion">
+  <img src="assets/canonical_diffusion.gif" width="100%" alt="Two densities with the same mean and covariance, one with overlapping and one with separated modes: under the canonical diffusion the separated one mixes slowly, its autocorrelation decays slowly, and its SSA is higher">
 </p>
 
 > **From samples and a score alone, SSA measures how strongly a distribution splits
